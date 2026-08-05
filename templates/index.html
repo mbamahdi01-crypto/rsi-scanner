@@ -112,6 +112,14 @@
         </select>
       </div>
       <div class="field">
+        <label>المناطق المطلوبة</label>
+        <select id="signal-filter">
+          <option value="both">كلاهما (الطلب والعرض)</option>
+          <option value="bullish">مناطق الطلب فقط (شراء)</option>
+          <option value="bearish">مناطق العرض فقط (بيع)</option>
+        </select>
+      </div>
+      <div class="field">
         <label>شرط RSI لتنبيه الشراء (السهم هبط)</label>
         <select id="rsi-max">
           <option value="">كل الحالات</option>
@@ -154,6 +162,7 @@
     </div>
     <div class="toolbar">
       <button class="btn" onclick="scanNow()">فحص الآن</button>
+      <button class="btn stop" id="btn-stop" onclick="stopScan()" style="display:none">إيقاف الفحص</button>
       <button class="btn ghost" id="toggle-auto" onclick="toggleAuto()">تشغيل الفحص التلقائي</button>
       <button class="btn ghost" onclick="refreshLists()">تحديث قوائم الأسهم</button>
       <button class="btn danger" onclick="clearAlerts()">مسح التنبيهات</button>
@@ -290,6 +299,7 @@ function currentSelection() {
     interval_minutes: parseInt($('interval').value, 10) || 30,
     volume_filter: $('volume-filter').value === 'true',
     trend_filter: $('trend-filter').value === 'true',
+    signal_filter: $('signal-filter').value,
     telegram_token: $('tg-token').value.trim(),
     telegram_chat: $('tg-chat').value.trim(),
   };
@@ -340,6 +350,7 @@ async function loadStatus() {
     : (st.last_scan_duration != null ? `آخر دورة استغرقت ${st.last_scan_duration} ثانية.` : '');
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
+  $('btn-stop').style.display = running ? 'inline-block' : 'none';
   $('interval').value = currentConfig.interval_minutes;
   if (currentConfig.rsi_max == null || currentConfig.rsi_max === '') {
     $('rsi-max').value = '';
@@ -349,6 +360,9 @@ async function loadStatus() {
   }
   $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
   $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
+  if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
+    $('signal-filter').value = currentConfig.signal_filter;
+  }
   $('tg-token').value = currentConfig.telegram_token || '';
   $('tg-chat').value = currentConfig.telegram_chat || '';
 }
@@ -358,8 +372,10 @@ async function loadAlerts() {
     const mkt = $('market').value;
     const sec = $('sector').value;
     const onlyCurrent = $('only-current').checked;
+    const sigFilter = $('signal-filter').value;
     let url = '/api/alerts?limit=400';
     if (onlyCurrent) { url += `&market=${mkt}`; if (sec !== 'all') url += `&sector=${sec}`; }
+    if (sigFilter && sigFilter !== 'both') url += `&direction=${sigFilter}`;
     const data = await (await fetch(url)).json();
     const body = $('alerts-body');
     if (!data.length) {
@@ -423,6 +439,17 @@ async function scanNow() {
     }
   } catch (e) {
     $('status-line').innerHTML = 'تعذر بدء الفحص — تحقق من اتصال الخادم.';
+  }
+}
+
+async function stopScan() {
+  $('status-line').innerHTML = 'جارِ إيقاف الفحص...';
+  try {
+    const res = await fetch('/api/stop-scan', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    $('status-line').innerHTML = (d && d.status) || 'أُرسل طلب الإيقاف.';
+  } catch (e) {
+    $('status-line').innerHTML = 'تعذر إرسال طلب الإيقاف.';
   }
 }
 
@@ -565,6 +592,7 @@ async function onSelectionChanged() {
 $('market').addEventListener('change', () => { renderSectors(); onSelectionChanged(); });
 $('sector').addEventListener('change', () => onSelectionChanged());
 $('timeframe').addEventListener('change', () => onSelectionChanged());
+$('signal-filter').addEventListener('change', () => onSelectionChanged());
 $('rsi-max').addEventListener('change', () => onSelectionChanged());
 $('interval').addEventListener('change', debounce(saveConfig, 400));
 $('volume-filter').addEventListener('change', debounce(saveConfig, 400));

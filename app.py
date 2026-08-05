@@ -27,7 +27,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, TimeoutError as _FutureTimeoutError
 from datetime import datetime
 
 import pandas as pd
@@ -75,7 +75,7 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-BATCH_SIZE = 100          # عدد الأسهم في كل طلب جلب جماعي
+BATCH_SIZE = 150          # عدد الأسهم في كل طلب جلب جماعي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
 
@@ -92,6 +92,7 @@ DEFAULTS = {
     "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
+    "signal_filter": "both",    # عرض النتائج: both=الطلب والعرض معاً | bullish=مناطق الطلب فقط | bearish=مناطق العرض فقط
 }
 
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -131,6 +132,8 @@ def _load_config():
             cfg["telegram_token"] = saved["telegram_token"]
         if isinstance(saved.get("telegram_chat"), str):
             cfg["telegram_chat"] = saved["telegram_chat"]
+        if saved.get("signal_filter") in ("both", "bullish", "bearish"):
+            cfg["signal_filter"] = saved["signal_filter"]
         # فريم التنفيذ: يومي دائماً عند الإقلاع — المستخدم يغيّره وقت الحاجة فقط
         cfg["timeframe"] = DEFAULTS["timeframe"]
     except (OSError, ValueError):
@@ -166,6 +169,7 @@ _state = {
 }
 _cfg_lock = threading.Lock()
 _state_lock = threading.Lock()
+_stop_event = threading.Event()
 
 # ==================== الحماية بكلمة مرور ====================
 SECRET_PATH = os.path.join(DATA_DIR, "secret.json")
@@ -348,9 +352,11 @@ def _extract_ticker(raw, ticker, rule, tail=None):
 
 # ==================== كياش بيانات ياهو (يمنع إعادة التحميل كل دورة) ====================
 def _cache_ttl(interval):
-    """صلاحية الكياش بالثواني: اللحظي أقصر (15 د)، اليومي والأسبوعي أطول (4 ساعات)
-    حتى تتكرر دورات الفحص اليومي من الكياش بسرعة دون إعادة تحميل السوق كاملاً."""
-    return 900 if interval in ("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h") else 14400
+    """صلاحية الكياش بالثواني: اللحظي (15 د) — اليومي والأسبوعي/الشهري (24 ساعة)
+    حتى تتكرر دورات الفحص من الكياش بسرعة دون إعادة تحميل السوق كاملاً."""
+    if interval in ("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"):
+        return 900
+    return 86400
 
 
 def _cache_path(ticker, interval):
@@ -395,13 +401,13 @@ def _download_batch(grp, lookback, base_interval):
                         group_by="ticker", progress=False, threads=True,
                         auto_adjust=False)
         try:
-            return fut.result(timeout=60)
+            return fut.result(timeout=120)
         except _FutureTimeoutError:
             print(f"انتهت مهلة جلب الدفعة {grp[0]}..{grp[-1]}")
             return None
 
 
-def fetch_batch(tickers, timeframe, tail=None):
+def fetch_batch(tickers, timeframe, tail=None, pool=None):
     base_interval, rule = timeframe, None
     if timeframe in CUSTOM_TIMEFRAMES:
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
@@ -416,26 +422,35 @@ def fetch_batch(tickers, timeframe, tail=None):
                 results[t] = df
                 continue
         needed.append(t)
-    for i in range(0, len(needed), BATCH_SIZE):
-        grp = [t for t in needed[i:i + BATCH_SIZE]]
-        if not grp:
-            continue
+    batches = [needed[i:i + BATCH_SIZE] for i in range(0, len(needed), BATCH_SIZE)]
+
+    def _fetch_one(grp):
         try:
             raw = _download_batch(grp, lookback, base_interval)
         except Exception as e:
             print(f"فشل جلب دفعة {grp[0]}..: {e}")
-            continue
+            return None
         if raw is None or raw.empty:
-            continue
+            return None
+        out = {}
         for t in grp:
             try:
                 single = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
                 df = _extract_ticker(raw, t, rule, tail)
                 if df is not None:
-                    results[t] = df
+                    out[t] = df
                     _write_cache(t, base_interval, single)
             except Exception:
                 continue
+        return out
+
+    pool = min(pool or 6, max(1, len(batches)))
+    with ThreadPoolExecutor(max_workers=pool) as ex:
+        for _i, out in enumerate(ex.map(_fetch_one, batches), 1):
+            if out:
+                results.update(out)
+            with _state_lock:
+                _state["phase"] = f"جلب البيانات ({_i}/{len(batches)} دفعة)"
     return results
 
 
@@ -549,15 +564,15 @@ def run_scan(override=None):
           f"| تنفيذ {cfg['timeframe']} | منطقة من {zone_tf} | RSI شراء <= {rsi_max if rsi_max else 'بدون حد'}")
 
     try:
-        tickers = [t for t, _ in universe]
-        exec_data = fetch_batch(tickers, cfg["timeframe"], tail=400)
+        items = list(universe)
+        groups = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
+        if not groups:
+            groups = [items]
 
         with _state_lock:
-            _state["phase"] = "تحليل المؤشرات"
+            _state["phase"] = "جلب البيانات وتحليلها"
 
-        def _process_one(item):
-            t, meta = item
-            df = exec_data.get(t)
+        def _analyze_one(t, meta, df):
             if df is None or len(df) < min_bars:
                 return 0, 0, False
             try:
@@ -577,7 +592,7 @@ def run_scan(override=None):
                         if zone_tf == cfg["timeframe"]:
                             zone_cache[t] = df
                         else:
-                            zone_cache[t] = fetch_batch([t], zone_tf, tail=250).get(t)
+                            zone_cache[t] = fetch_batch([t], zone_tf, tail=250, pool=1).get(t)
                     zdf = zone_cache[t]
                     zone = None
                     if zdf is not None and len(zdf) >= min_bars:
@@ -621,16 +636,46 @@ def run_scan(override=None):
                 print(f"  خطأ أثناء فحص {t}: {e}")
                 return 0, 0, True
 
-        workers = min(8, max(1, (os.cpu_count() or 2)))
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for (t, meta), (nb, ns, err) in zip(universe, ex.map(_process_one, universe)):
+        def _process_group(group):
+            if _stop_event.is_set():
+                return 0, 0, 0, 0
+            grp_tickers = [t for t, _ in group]
+            data = fetch_batch(grp_tickers, cfg["timeframe"], tail=400, pool=1)
+            gbull = gbear = gerr = cnt = 0
+            for t, meta in group:
+                if _stop_event.is_set():
+                    break
+                nb, ns, err = _analyze_one(t, meta, data.get(t))
+                cnt += 1
+                gbull += nb
+                gbear += ns
+                if err:
+                    gerr += 1
                 with _state_lock:
                     _state["current"] = t
-                    _state["done"] += 1
-                    _state["bullish"] += nb
-                    _state["bearish"] += ns
-                    if err:
-                        _state["errors"] += 1
+            return cnt, gbull, gbear, gerr
+
+        workers = min(6, max(1, len(groups)))
+        queue = list(groups)
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {}
+            for _ in range(workers):
+                if queue:
+                    futs[ex.submit(_process_group, queue.pop(0))] = True
+            while futs:
+                done, _ = wait(futs, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    del futs[fut]
+                    if not _stop_event.is_set():
+                        cnt, nb, ns, err = fut.result()
+                        with _state_lock:
+                            _state["done"] += cnt
+                            _state["bullish"] += nb
+                            _state["bearish"] += ns
+                            _state["errors"] += err
+                            _state["phase"] = f"تحليل {_state['done']}/{_state['total']}"
+                if queue and not _stop_event.is_set():
+                    futs[ex.submit(_process_group, queue.pop(0))] = True
     except Exception:
         import traceback
         traceback.print_exc()
@@ -820,6 +865,8 @@ def api_set_config():
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
             _config["telegram_chat"] = data["telegram_chat"].strip()
+        if "signal_filter" in data and data["signal_filter"] in ("both", "bullish", "bearish"):
+            _config["signal_filter"] = data["signal_filter"]
     _save_config()
     return jsonify(_config_payload())
 
@@ -838,14 +885,24 @@ def api_scan_now():
             override["sector"] = data["sector"]
     if data.get("timeframe") in EXECUTION_TIMEFRAMES:
         override["timeframe"] = data["timeframe"]
+    _stop_event.clear()
     threading.Thread(target=run_scan, kwargs={"override": override}, daemon=True).start()
     return jsonify({"status": "بدأ الفحص..."})
+
+
+@app.route("/api/stop-scan", methods=["POST"])
+def api_stop_scan():
+    _stop_event.set()
+    with _state_lock:
+        _state["phase"] = "جارٍ الإيقاف..."
+    return jsonify({"status": "جارٍ إيقاف الفحص..."})
 
 
 @app.route("/api/alerts")
 def api_alerts():
     market = request.args.get("market")
     sector = request.args.get("sector")
+    direction = request.args.get("direction")
     limit = min(int(request.args.get("limit", 300)), 2000)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -857,6 +914,9 @@ def api_alerts():
     if sector and sector != "all":
         where.append("sector=?")
         params.append(sector)
+    if direction in ("bullish", "bearish"):
+        where.append("direction=?")
+        params.append(direction)
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
