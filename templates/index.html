@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>فلتر انفراج RSI | السوق السعودي والأمريكي</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: #0f1115;
+    color: #e8e8e8;
+    margin: 0;
+    padding: 20px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { color: #4fd1c5; font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: #8a8f98; margin-top: 0; font-size: 13px; }
+
+  .panel {
+    background: #161920; border: 1px solid #24272f; border-radius: 12px;
+    padding: 16px; margin-top: 14px;
+  }
+  .grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: #8a8f98; }
+  select, input[type=number] {
+    background: #1a1d24; color: #e8e8e8; border: 1px solid #2a2d34;
+    border-radius: 8px; padding: 9px 12px; font-size: 14px; min-width: 180px;
+  }
+  select:focus, input:focus { outline: 1px solid #4fd1c5; }
+  .btn {
+    background: #4fd1c5; color: #0f1115; border: none; padding: 10px 20px;
+    border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;
+  }
+  .btn:hover { background: #3bb8ac; }
+  .btn.ghost { background: transparent; color: #4fd1c5; border: 1px solid #4fd1c5; }
+  .btn.ghost:hover { background: rgba(79,209,197,.1); }
+  .btn.danger { background: transparent; color: #f66565; border: 1px solid #f66565; }
+  .btn.danger:hover { background: rgba(246,101,101,.1); }
+  .btn.stop { background: #f66565; color: #fff; }
+  .btn.stop:hover { background: #d94f4f; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+  .stat {
+    background: #161920; border: 1px solid #24272f; border-radius: 10px;
+    padding: 12px 18px; min-width: 130px;
+  }
+  .stat .k { font-size: 12px; color: #8a8f98; }
+  .stat .v { font-size: 20px; font-weight: bold; color: #4fd1c5; }
+  .stat .v.bear { color: #f66565; }
+
+  .progress-outer { height: 8px; background: #1a1d24; border-radius: 6px; overflow: hidden; margin-top: 12px; }
+  .progress-inner { height: 100%; width: 0%; background: linear-gradient(90deg,#4fd1c5,#3bb8ac); transition: width .4s; }
+  #status-line { font-size: 13px; color: #f6c453; margin-top: 8px; min-height: 18px; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; background: #161920; border-radius: 10px; overflow: hidden; }
+  th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid #24272f; font-size: 13px; }
+  th { background: #1a1d24; color: #4fd1c5; font-weight: 600; white-space: nowrap; }
+  tr:hover { background: #1b1e26; }
+  .empty { text-align: center; padding: 40px; color: #666; }
+  .ticker { font-weight: bold; color: #fff; }
+  .name { font-weight: bold; color: #fff; }
+  .muted { color: #8a8f98; font-size: 12px; }
+  .tag { padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; white-space: nowrap; }
+  .tag.bullish { background: rgba(79,209,197,0.15); color: #4fd1c5; }
+  .tag.bearish { background: rgba(246,101,101,0.15); color: #f66565; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: center; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8a8f98; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #161920; border: 1px solid #24272f; border-radius: 12px; padding: 24px; width: 92%; max-width: 360px; }
+  .modal h3 { color: #4fd1c5; margin-bottom: 14px; font-size: 17px; }
+  .modal label { display: block; font-size: 13px; color: #8a8f98; margin: 10px 0 4px; }
+  .modal input[type=password] { width: 100%; padding: 9px 12px; border-radius: 7px; border: 1px solid #24272f; background: #1a1d24; color: #fff; font-size: 14px; outline: none; }
+  .modal input[type=password]:focus { border-color: #4fd1c5; }
+  .modal .err { color: #f66565; font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-start; }
+  .badge {
+    display: inline-block; background: #1a1d24; border: 1px solid #2a2d34;
+    border-radius: 20px; padding: 4px 14px; font-size: 12px; color: #4fd1c5; margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔔 فلتر انفراج RSI + مناطق الطلب والعرض</h1>
+  <p class="sub">يفحص الأسهم في السوق السعودي (تاسي) والسوق الأمريكي وقطاعاتهما، ويطلق التنبيه في اللحظة التي يخترق فيها RSI القمة (طلب/شراء) أو يكسر القاع (عرض/بيع)، مع عرض منطقة الطلب/العرض من الفريم الأعلى.</p>
+  <span class="badge" id="map-badge">فريم التنفيذ: يومي ← المنطقة من: أسبوعي</span>
+  <span class="badge" id="rsi-badge">حالة RSI: أقل من 50</span>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="field">
+        <label>السوق</label>
+        <select id="market">
+          <option value="saudi">السوق السعودي (تاسي)</option>
+          <option value="us">السوق الأمريكي</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>القطاع</label>
+        <select id="sector"></select>
+      </div>
+      <div class="field">
+        <label>فريم التنفيذ</label>
+        <select id="timeframe">
+          <option value="15m">15 دقيقة</option>
+          <option value="1h">ساعة</option>
+          <option value="1d">يومي</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>شرط RSI لتنبيه الشراء (السهم هبط)</label>
+        <select id="rsi-max">
+          <option value="">كل الحالات</option>
+          <option value="50">أقل من 50 (تحت خط الوسط)</option>
+          <option value="40">قريب من 30-40 (أقل من 40)</option>
+          <option value="30">تشبع بيعي (أقل من 30)</option>
+          <option value="20">تشبع بيعي قوي (أقل من 20)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>دورة الفحص التلقائي (دقائق)</label>
+        <input type="number" id="interval" min="5" value="30" style="min-width:120px">
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" onclick="scanNow()">فحص الآن</button>
+      <button class="btn ghost" id="toggle-auto" onclick="toggleAuto()">تشغيل الفحص التلقائي</button>
+      <button class="btn ghost" onclick="refreshLists()">تحديث قوائم الأسهم</button>
+      <button class="btn danger" onclick="clearAlerts()">مسح التنبيهات</button>
+      <button class="btn ghost" onclick="showPwdModal()">تغيير كلمة المرور</button>
+      <button class="btn ghost" onclick="logout()">خروج</button>
+      <label class="chk"><input type="checkbox" id="only-current" checked> تنبيهات الاختيار الحالي فقط</label>
+    </div>
+
+    <div class="modal-overlay" id="pwd-overlay" style="display:none">
+      <div class="modal">
+        <h3>تغيير كلمة المرور</h3>
+        <label>كلمة المرور الحالية</label>
+        <input type="password" id="pwd-old" autocomplete="current-password">
+        <label>كلمة المرور الجديدة (4 أحرف على الأقل)</label>
+        <input type="password" id="pwd-new" autocomplete="new-password">
+        <label>تأكيد كلمة المرور الجديدة</label>
+        <input type="password" id="pwd-new2" autocomplete="new-password">
+        <div class="err" id="pwd-err"></div>
+        <div class="modal-actions">
+          <button class="btn" onclick="changePwd()">حفظ</button>
+          <button class="btn ghost" onclick="hidePwdModal()">إلغاء</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">الحالة</div><div class="v" id="st-running">متوقف</div></div>
+      <div class="stat"><div class="k">عدد أسهم الفحص</div><div class="v" id="st-total">0</div></div>
+      <div class="stat"><div class="k">تم الفحص</div><div class="v" id="st-done">0</div></div>
+      <div class="stat"><div class="k">تنبيهات طلب</div><div class="v" id="st-bull">0</div></div>
+      <div class="stat"><div class="k">تنبيهات عرض</div><div class="v bear" id="st-bear">0</div></div>
+      <div class="stat"><div class="k">آخر فحص</div><div class="v" style="font-size:14px" id="st-last">—</div></div>
+    </div>
+    <div class="progress-outer"><div class="progress-inner" id="progress"></div></div>
+    <div id="status-line"></div>
+  </div>
+
+  <div class="panel" style="padding:0; overflow:hidden;">
+    <table>
+      <thead>
+        <tr>
+          <th>السهم</th>
+          <th>الاسم</th>
+          <th>السوق</th>
+          <th>القطاع</th>
+          <th>النوع</th>
+          <th>فريم التنفيذ</th>
+          <th>شمعة الإشارة</th>
+          <th>السعر</th>
+          <th>RSI (عند الاختراق)</th>
+          <th>قاع RSI (الانفراج)</th>
+          <th>الرقبة المخترقة</th>
+          <th>منطقة الطلب/العرض</th>
+        </tr>
+      </thead>
+      <tbody id="alerts-body">
+        <tr><td colspan="12" class="empty">جارِ التحميل...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let meta = null;
+let currentConfig = null;
+
+const $ = id => document.getElementById(id);
+
+async function loadMeta() {
+  meta = await (await fetch('/api/meta')).json();
+  renderSectors();
+}
+
+function renderSectors() {
+  const mkt = $('market').value;
+  const sel = $('sector');
+  const prev = sel.value || (currentConfig && currentConfig.sector) || 'all';
+  sel.innerHTML = '';
+  sel.appendChild(new Option('كل القطاعات', 'all'));
+  sel.appendChild(new Option('المؤشرات', 'indices'));
+  const sectors = (meta.sectors[mkt] || []).slice();
+  sectors.sort((a, b) => b.count - a.count);
+  sectors.forEach(s => sel.appendChild(new Option(`${s.ar} (${s.count})`, s.id)));
+  const valid = ['all', 'indices', ...sectors.map(s => s.id)];
+  sel.value = valid.includes(prev) ? prev : 'all';
+}
+
+function syncUI() {
+  if (!currentConfig) return;
+  if (['saudi', 'us'].includes(currentConfig.market)) $('market').value = currentConfig.market;
+  renderSectors();
+  if (['15m', '1h', '1d'].includes(currentConfig.timeframe)) $('timeframe').value = currentConfig.timeframe;
+}
+
+function currentSelection() {
+  return {
+    market: $('market').value,
+    sector: $('sector').value,
+    timeframe: $('timeframe').value,
+    rsi_max: $('rsi-max').value === '' ? null : parseInt($('rsi-max').value, 10),
+    auto: currentConfig ? currentConfig.auto : true,
+    interval_minutes: parseInt($('interval').value, 10) || 30,
+  };
+}
+
+async function saveConfig() {
+  const body = currentSelection();
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  currentConfig = await res.json();
+  $('map-badge').innerHTML =
+    `فريم التنفيذ: ${tfLabel(currentConfig.timeframe)} ← المنطقة من: ${tfLabel(currentConfig.zone_timeframe)}`;
+  $('rsi-badge').innerHTML = rsiLabel(currentConfig.rsi_max);
+}
+
+function rsiLabel(v) {
+  if (v == null || v === '') return 'حالة RSI: كل الحالات';
+  return `حالة RSI: أقل من ${v}`;
+}
+
+function tfLabel(id) {
+  const map = { '15m': '15 دقيقة', '2h': 'ساعتان', '1h': 'ساعة', '1d': 'يومي', '1wk': 'أسبوعي' };
+  return map[id] || id;
+}
+
+async function loadStatus() {
+  try {
+    currentConfig = await (await fetch('/api/config')).json();
+  } catch (e) { return; }
+  const st = currentConfig.status || {};
+  const running = !!st.running;
+  $('st-running').innerText = running ? 'جارٍ الفحص...' : (currentConfig.auto ? 'تلقائي مفعّل' : 'متوقف');
+  $('st-running').style.color = running ? '#f6c453' : (currentConfig.auto ? '#4fd1c5' : '#8a8f98');
+  $('st-total').innerText = st.total || 0;
+  $('st-done').innerText = st.done || 0;
+  $('st-bull').innerText = st.bullish || 0;
+  $('st-bear').innerText = st.bearish || 0;
+  $('st-last').innerText = st.last_scan_at ? st.last_scan_at.replace('T', ' ').slice(0, 19) : '—';
+  const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
+  $('progress').style.width = pct + '%';
+  $('status-line').innerHTML = running
+    ? `${st.phase || ''} — جاري فحص <b>${st.current || ''}</b> (${st.done || 0}/${st.total || 0})`
+    : (st.last_scan_duration != null ? `آخر دورة استغرقت ${st.last_scan_duration} ثانية.` : '');
+  $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
+  $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
+  $('interval').value = currentConfig.interval_minutes;
+  if (currentConfig.rsi_max == null || currentConfig.rsi_max === '') {
+    $('rsi-max').value = '';
+  } else {
+    const opts = [...$('rsi-max').options].map(o => o.value);
+    $('rsi-max').value = opts.includes(String(currentConfig.rsi_max)) ? String(currentConfig.rsi_max) : '';
+  }
+}
+
+async function loadAlerts() {
+  const mkt = $('market').value;
+  const sec = $('sector').value;
+  const onlyCurrent = $('only-current').checked;
+  let url = '/api/alerts?limit=400';
+  if (onlyCurrent) { url += `&market=${mkt}`; if (sec !== 'all') url += `&sector=${sec}`; }
+  const data = await (await fetch(url)).json();
+  const body = $('alerts-body');
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="12" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
+    return;
+  }
+  body.innerHTML = data.map(a => {
+    const isBullish = a.direction === 'bullish';
+    const tagClass = isBullish ? 'bullish' : 'bearish';
+    const tagLabel = isBullish ? 'طلب / شراء' : 'عرض / بيع';
+    const zone = (a.zone_low != null && a.zone_high != null)
+      ? `${Number(a.zone_low).toFixed(2)} — ${Number(a.zone_high).toFixed(2)} <span class="muted">(${a.zone_timeframe || '—'})</span>`
+      : '—';
+    const sectorAr = (meta && (meta.sector_ar[a.sector] || a.sector)) || a.sector;
+    const marketAr = a.market === 'saudi' ? 'تاسي' : 'أمريكا';
+    return `<tr>
+      <td class="ticker">${a.ticker}</td>
+      <td class="name">${esc(a.name || '')}</td>
+      <td>${marketAr}</td>
+      <td class="muted">${esc(sectorAr)}</td>
+      <td><span class="tag ${tagClass}">${tagLabel}</span></td>
+      <td>${a.timeframe}</td>
+      <td>${a.signal_date}</td>
+      <td>${Number(a.price).toFixed(2)}</td>
+      <td>${Number(a.rsi_value).toFixed(2)}</td>
+      <td class="muted">${a.rsi_low != null ? Number(a.rsi_low).toFixed(2) : '—'}</td>
+      <td>${Number(a.peak_level).toFixed(2)}</td>
+      <td>${zone}</td>
+    </tr>`;
+  }).join('');
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+async function scanNow() {
+  await saveConfig();
+  $('status-line').innerHTML = 'بدأ الفحص... قد يستغرق بضع دقائق حسب عدد الأسهم.';
+  await fetch('/api/scan-now', { method: 'POST' });
+}
+
+async function toggleAuto() {
+  const cur = currentSelection();
+  cur.auto = !(currentConfig && currentConfig.auto);
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cur),
+  });
+  currentConfig = await res.json();
+}
+
+async function refreshLists() {
+  $('status-line').innerHTML = 'جارِ تحديث قوائم الأسهم والقطاعات من المصادر...';
+  await fetch('/api/refresh-lists', { method: 'POST' });
+}
+
+async function clearAlerts() {
+  await fetch('/api/clear-alerts', { method: 'POST' });
+  loadAlerts();
+}
+
+function showPwdModal() {
+  $('pwd-old').value = ''; $('pwd-new').value = ''; $('pwd-new2').value = '';
+  $('pwd-err').innerText = '';
+  $('pwd-overlay').style.display = 'flex';
+  $('pwd-old').focus();
+}
+function hidePwdModal() { $('pwd-overlay').style.display = 'none'; }
+
+async function changePwd() {
+  const old = $('pwd-old').value;
+  const n1 = $('pwd-new').value;
+  const n2 = $('pwd-new2').value;
+  $('pwd-err').innerText = '';
+  if (n1 !== n2) { $('pwd-err').innerText = 'كلمتا المرور الجديدة غير متطابقتين'; return; }
+  const res = await fetch('/api/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old, new: n1 }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) { hidePwdModal(); alert('تم تغيير كلمة المرور بنجاح'); }
+  else { $('pwd-err').innerText = data.error || 'حدث خطأ'; }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  location.href = '/login';
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+async function onSelectionChanged() {
+  if ($('market').value === 'saudi') {
+    const sectors = (meta.sectors.saudi || []).map(s => s.id);
+    if (!['all', 'indices', ...sectors].includes($('sector').value)) $('sector').value = 'all';
+  }
+  await saveConfig();
+  loadAlerts();
+}
+
+$('market').addEventListener('change', () => { renderSectors(); onSelectionChanged(); });
+$('sector').addEventListener('change', () => onSelectionChanged());
+$('timeframe').addEventListener('change', () => onSelectionChanged());
+$('rsi-max').addEventListener('change', () => onSelectionChanged());
+$('interval').addEventListener('change', debounce(saveConfig, 400));
+$('only-current').addEventListener('change', loadAlerts);
+
+(async function init() {
+  await loadMeta();
+  await loadStatus();
+  syncUI();
+  await saveConfig();
+  loadAlerts();
+})();
+
+setInterval(loadStatus, 4000);
+setInterval(loadAlerts, 15000);
+</script>
+</body>
+</html>

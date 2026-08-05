@@ -1,0 +1,126 @@
+{
+ "source": "wikipedia:Dow_Jones_Industrial_Average",
+ "count": 30,
+ "stocks": [
+  {
+   "ticker": "MMM",
+   "name": "3M"
+  },
+  {
+   "ticker": "GOOGL",
+   "name": "Alphabet(Class A)"
+  },
+  {
+   "ticker": "AXP",
+   "name": "American Express"
+  },
+  {
+   "ticker": "AMGN",
+   "name": "Amgen"
+  },
+  {
+   "ticker": "AMZN",
+   "name": "Amazon"
+  },
+  {
+   "ticker": "AAPL",
+   "name": "Apple"
+  },
+  {
+   "ticker": "BA",
+   "name": "Boeing"
+  },
+  {
+   "ticker": "CAT",
+   "name": "Caterpillar"
+  },
+  {
+   "ticker": "CVX",
+   "name": "Chevron"
+  },
+  {
+   "ticker": "CSCO",
+   "name": "Cisco"
+  },
+  {
+   "ticker": "KO",
+   "name": "Coca-Cola"
+  },
+  {
+   "ticker": "DIS",
+   "name": "Disney"
+  },
+  {
+   "ticker": "GS",
+   "name": "Goldman Sachs"
+  },
+  {
+   "ticker": "HD",
+   "name": "Home Depot"
+  },
+  {
+   "ticker": "HON",
+   "name": "Honeywell Technologies"
+  },
+  {
+   "ticker": "IBM",
+   "name": "IBM"
+  },
+  {
+   "ticker": "JNJ",
+   "name": "Johnson & Johnson"
+  },
+  {
+   "ticker": "JPM",
+   "name": "JPMorgan Chase"
+  },
+  {
+   "ticker": "MCD",
+   "name": "McDonald's"
+  },
+  {
+   "ticker": "MRK",
+   "name": "Merck"
+  },
+  {
+   "ticker": "MSFT",
+   "name": "Microsoft"
+  },
+  {
+   "ticker": "NKE",
+   "name": "Nike"
+  },
+  {
+   "ticker": "NVDA",
+   "name": "Nvidia"
+  },
+  {
+   "ticker": "PG",
+   "name": "Procter & Gamble"
+  },
+  {
+   "ticker": "CRM",
+   "name": "Salesforce"
+  },
+  {
+   "ticker": "SHW",
+   "name": "Sherwin-Williams"
+  },
+  {
+   "ticker": "TRV",
+   "name": "Travelers"
+  },
+  {
+   "ticker": "UNH",
+   "name": "UnitedHealth Group"
+  },
+  {
+   "ticker": "V",
+   "name": "Visa"
+  },
+  {
+   "ticker": "WMT",
+   "name": "Walmart"
+  }
+ ]
+}

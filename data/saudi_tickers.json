@@ -1,0 +1,2134 @@
+{
+ "source": "tadawulallshareindex.com/en/all-shares-codes",
+ "count": 266,
+ "stocks": [
+  {
+   "ticker": "1010.SR",
+   "code": "1010",
+   "name_en": "Riyad Bank",
+   "name_ar": "الرياض",
+   "sector": "Banks",
+   "isin": "SA0007879048"
+  },
+  {
+   "ticker": "1020.SR",
+   "code": "1020",
+   "name_en": "Bank AlJazira",
+   "name_ar": "الجزيرة",
+   "sector": "Banks",
+   "isin": "SA0007879055"
+  },
+  {
+   "ticker": "1030.SR",
+   "code": "1030",
+   "name_en": "Saudi Investment Bank",
+   "name_ar": "الإستثمار",
+   "sector": "Banks",
+   "isin": "SA0007879063"
+  },
+  {
+   "ticker": "1050.SR",
+   "code": "1050",
+   "name_en": "Banque Saudi Fransi",
+   "name_ar": "بي اس اف",
+   "sector": "Banks",
+   "isin": "SA0007879071"
+  },
+  {
+   "ticker": "1060.SR",
+   "code": "1060",
+   "name_en": "Saudi Awwal Bank (SAB)",
+   "name_ar": "الأول",
+   "sector": "Banks",
+   "isin": "SA0007879089"
+  },
+  {
+   "ticker": "1080.SR",
+   "code": "1080",
+   "name_en": "Arab National Bank",
+   "name_ar": "العربي",
+   "sector": "Banks",
+   "isin": "SA0007879097"
+  },
+  {
+   "ticker": "1111.SR",
+   "code": "1111",
+   "name_en": "Tadawul Group",
+   "name_ar": "مجموعة تداول",
+   "sector": "Diversified Financials",
+   "isin": "SA15CGG50012"
+  },
+  {
+   "ticker": "1120.SR",
+   "code": "1120",
+   "name_en": "Al Rajhi Bank",
+   "name_ar": "الراجحي",
+   "sector": "Banks",
+   "isin": "SA0007879113"
+  },
+  {
+   "ticker": "1140.SR",
+   "code": "1140",
+   "name_en": "Bank Albilad",
+   "name_ar": "البلاد",
+   "sector": "Banks",
+   "isin": "SA000A0D9HK3"
+  },
+  {
+   "ticker": "1150.SR",
+   "code": "1150",
+   "name_en": "Alinma Bank",
+   "name_ar": "الإنماء",
+   "sector": "Banks",
+   "isin": "SA000A0KDVM8"
+  },
+  {
+   "ticker": "1180.SR",
+   "code": "1180",
+   "name_en": "Saudi National Bank (SNB)",
+   "name_ar": "الأهلي",
+   "sector": "Banks",
+   "isin": "SA12TG012012"
+  },
+  {
+   "ticker": "1182.SR",
+   "code": "1182",
+   "name_en": "Amlak",
+   "name_ar": "أملاك",
+   "sector": "Diversified Financials",
+   "isin": "SA12AG50UH14"
+  },
+  {
+   "ticker": "1183.SR",
+   "code": "1183",
+   "name_en": "SHL",
+   "name_ar": "سهل",
+   "sector": "Diversified Financials",
+   "isin": "SA12AG512H13"
+  },
+  {
+   "ticker": "1201.SR",
+   "code": "1201",
+   "name_en": "Takween",
+   "name_ar": "تكوين",
+   "sector": "Materials",
+   "isin": "SA13DG512413"
+  },
+  {
+   "ticker": "1202.SR",
+   "code": "1202",
+   "name_en": "MEPCO",
+   "name_ar": "مبكو",
+   "sector": "Materials",
+   "isin": "SA133G50A616"
+  },
+  {
+   "ticker": "1210.SR",
+   "code": "1210",
+   "name_en": "BCI",
+   "name_ar": "بي سي آي",
+   "sector": "Materials",
+   "isin": "SA0007879592"
+  },
+  {
+   "ticker": "1211.SR",
+   "code": "1211",
+   "name_en": "Maaden",
+   "name_ar": "معادن",
+   "sector": "Materials",
+   "isin": "SA000A0HNF36"
+  },
+  {
+   "ticker": "1212.SR",
+   "code": "1212",
+   "name_en": "Astra Industrial",
+   "name_ar": "أسترا الصناعية",
+   "sector": "Capital Goods",
+   "isin": "SA000A0LE328"
+  },
+  {
+   "ticker": "1213.SR",
+   "code": "1213",
+   "name_en": "Nasij",
+   "name_ar": "نسيج",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "SA000A0LE336"
+  },
+  {
+   "ticker": "1214.SR",
+   "code": "1214",
+   "name_en": "Al-Hassan Shaker",
+   "name_ar": "شاكر",
+   "sector": "Capital Goods",
+   "isin": "SA11LGS13H13"
+  },
+  {
+   "ticker": "1301.SR",
+   "code": "1301",
+   "name_en": "Aslak",
+   "name_ar": "أسلاك",
+   "sector": "Materials",
+   "isin": "SA0007879584"
+  },
+  {
+   "ticker": "1302.SR",
+   "code": "1302",
+   "name_en": "Bawan",
+   "name_ar": "بوان",
+   "sector": "Capital Goods",
+   "isin": "SA13DG50AD13"
+  },
+  {
+   "ticker": "1303.SR",
+   "code": "1303",
+   "name_en": "EIC",
+   "name_ar": "الصناعات الكهربائية",
+   "sector": "Capital Goods",
+   "isin": "SA13IG50IH13"
+  },
+  {
+   "ticker": "1304.SR",
+   "code": "1304",
+   "name_en": "Alyamamah Steel",
+   "name_ar": "اليمامة للحديد",
+   "sector": "Materials",
+   "isin": "SA13AG00U013"
+  },
+  {
+   "ticker": "1320.SR",
+   "code": "1320",
+   "name_en": "SSP",
+   "name_ar": "أنابيب السعودية",
+   "sector": "Materials",
+   "isin": "SA11TG510H13"
+  },
+  {
+   "ticker": "1321.SR",
+   "code": "1321",
+   "name_en": "East Pipes",
+   "name_ar": "أنابيب الشرق",
+   "sector": "Materials",
+   "isin": "SA14QG50GH12"
+  },
+  {
+   "ticker": "1322.SR",
+   "code": "1322",
+   "name_en": "AMAK",
+   "name_ar": "أماك",
+   "sector": "Materials",
+   "isin": "SA14TG50A213"
+  },
+  {
+   "ticker": "1323.SR",
+   "code": "1323",
+   "name_en": "UCIC",
+   "name_ar": "يو سي آي سي",
+   "sector": "Materials",
+   "isin": "—"
+  },
+  {
+   "ticker": "1810.SR",
+   "code": "1810",
+   "name_en": "Seera",
+   "name_ar": "سيرا",
+   "sector": "Consumer Services",
+   "isin": "SA000A0HNAS9"
+  },
+  {
+   "ticker": "1820.SR",
+   "code": "1820",
+   "name_en": "Baan",
+   "name_ar": "بان",
+   "sector": "Consumer Services",
+   "isin": "SA12BG51AH14"
+  },
+  {
+   "ticker": "1830.SR",
+   "code": "1830",
+   "name_en": "Leejam Sports",
+   "name_ar": "لجام للرياضة",
+   "sector": "Consumer Services",
+   "isin": "SA13OG50IH13"
+  },
+  {
+   "ticker": "1831.SR",
+   "code": "1831",
+   "name_en": "Maharah",
+   "name_ar": "مهارة",
+   "sector": "Commercial & Professional Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "1832.SR",
+   "code": "1832",
+   "name_en": "SADR",
+   "name_ar": "صدر",
+   "sector": "Commercial & Professional Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "1833.SR",
+   "code": "1833",
+   "name_en": "Al Mawarid",
+   "name_ar": "الموارد",
+   "sector": "Commercial & Professional Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "1834.SR",
+   "code": "1834",
+   "name_en": "SMASCO",
+   "name_ar": "سماسكو",
+   "sector": "Commercial & Professional Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "1835.SR",
+   "code": "1835",
+   "name_en": "Tamkeen",
+   "name_ar": "تمكين",
+   "sector": "Commercial & Professional Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "2001.SR",
+   "code": "2001",
+   "name_en": "Chemanol",
+   "name_ar": "كيمانول",
+   "sector": "Materials",
+   "isin": "SA000A0HNAK5"
+  },
+  {
+   "ticker": "2010.SR",
+   "code": "2010",
+   "name_en": "SABIC",
+   "name_ar": "سابك",
+   "sector": "Materials",
+   "isin": "SA0007879121"
+  },
+  {
+   "ticker": "2020.SR",
+   "code": "2020",
+   "name_en": "SABIC Agri-Nutrients",
+   "name_ar": "سابك للمغذيات الزراعية",
+   "sector": "Materials",
+   "isin": "SA0007879147"
+  },
+  {
+   "ticker": "2030.SR",
+   "code": "2030",
+   "name_en": "SARCO",
+   "name_ar": "المصافي",
+   "sector": "Energy",
+   "isin": "SA0007879139"
+  },
+  {
+   "ticker": "2040.SR",
+   "code": "2040",
+   "name_en": "Saudi Ceramics",
+   "name_ar": "الخزف السعودي",
+   "sector": "Capital Goods",
+   "isin": "SA0007879162"
+  },
+  {
+   "ticker": "2050.SR",
+   "code": "2050",
+   "name_en": "Savola Group",
+   "name_ar": "مجموعة صافولا",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879188"
+  },
+  {
+   "ticker": "2060.SR",
+   "code": "2060",
+   "name_en": "Tasnee",
+   "name_ar": "التصنيع",
+   "sector": "Materials",
+   "isin": "SA0007879170"
+  },
+  {
+   "ticker": "2070.SR",
+   "code": "2070",
+   "name_en": "SPIMACO",
+   "name_ar": "الدوائية",
+   "sector": "Pharma, Biotech & Life Sciences",
+   "isin": "SA0007879345"
+  },
+  {
+   "ticker": "2080.SR",
+   "code": "2080",
+   "name_en": "Saudi Gas",
+   "name_ar": "الغاز",
+   "sector": "Utilities",
+   "isin": "SA0007879378"
+  },
+  {
+   "ticker": "2081.SR",
+   "code": "2081",
+   "name_en": "Alkhorayef",
+   "name_ar": "الخريف",
+   "sector": "Utilities",
+   "isin": "—"
+  },
+  {
+   "ticker": "2082.SR",
+   "code": "2082",
+   "name_en": "ACWA Power",
+   "name_ar": "أكوا باور",
+   "sector": "Utilities",
+   "isin": "SA14TG012N13"
+  },
+  {
+   "ticker": "2083.SR",
+   "code": "2083",
+   "name_en": "Marafiq",
+   "name_ar": "مرافق",
+   "sector": "Utilities",
+   "isin": "—"
+  },
+  {
+   "ticker": "2084.SR",
+   "code": "2084",
+   "name_en": "Miyahuna",
+   "name_ar": "مياهنا",
+   "sector": "Utilities",
+   "isin": "—"
+  },
+  {
+   "ticker": "2090.SR",
+   "code": "2090",
+   "name_en": "NGC",
+   "name_ar": "جبسكو",
+   "sector": "Materials",
+   "isin": "SA0007879196"
+  },
+  {
+   "ticker": "2100.SR",
+   "code": "2100",
+   "name_en": "Wafrah",
+   "name_ar": "وفرة",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879204"
+  },
+  {
+   "ticker": "2110.SR",
+   "code": "2110",
+   "name_en": "Saudi Cable",
+   "name_ar": "الكابلات السعودية",
+   "sector": "Capital Goods",
+   "isin": "SA0007879212"
+  },
+  {
+   "ticker": "2120.SR",
+   "code": "2120",
+   "name_en": "SAIC",
+   "name_ar": "متطورة",
+   "sector": "Diversified Financials",
+   "isin": "SA0007879360"
+  },
+  {
+   "ticker": "2130.SR",
+   "code": "2130",
+   "name_en": "SIDQ",
+   "name_ar": "صدق",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "SA0007879352"
+  },
+  {
+   "ticker": "2140.SR",
+   "code": "2140",
+   "name_en": "Ayan",
+   "name_ar": "أيان",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879261"
+  },
+  {
+   "ticker": "2150.SR",
+   "code": "2150",
+   "name_en": "Zoujaj",
+   "name_ar": "زجاج",
+   "sector": "Materials",
+   "isin": "SA0007879220"
+  },
+  {
+   "ticker": "2160.SR",
+   "code": "2160",
+   "name_en": "Amiantit",
+   "name_ar": "أميانتيت",
+   "sector": "Capital Goods",
+   "isin": "SA0007879238"
+  },
+  {
+   "ticker": "2170.SR",
+   "code": "2170",
+   "name_en": "Alujain",
+   "name_ar": "اللجين",
+   "sector": "Materials",
+   "isin": "SA0007879246"
+  },
+  {
+   "ticker": "2180.SR",
+   "code": "2180",
+   "name_en": "FIPCO",
+   "name_ar": "فيبكو",
+   "sector": "Materials",
+   "isin": "SA0007879253"
+  },
+  {
+   "ticker": "2190.SR",
+   "code": "2190",
+   "name_en": "SISCO Holding",
+   "name_ar": "سيسكو القابضة",
+   "sector": "Transportation",
+   "isin": "SA0007879303"
+  },
+  {
+   "ticker": "2200.SR",
+   "code": "2200",
+   "name_en": "APC",
+   "name_ar": "أنابيب",
+   "sector": "Materials",
+   "isin": "SA0007879279"
+  },
+  {
+   "ticker": "2210.SR",
+   "code": "2210",
+   "name_en": "Nama Chemicals",
+   "name_ar": "نماء للكيماويات",
+   "sector": "Materials",
+   "isin": "SA0007879287"
+  },
+  {
+   "ticker": "2220.SR",
+   "code": "2220",
+   "name_en": "Maadaniyah",
+   "name_ar": "معدنية",
+   "sector": "Materials",
+   "isin": "SA0007879295"
+  },
+  {
+   "ticker": "2222.SR",
+   "code": "2222",
+   "name_en": "Saudi Aramco",
+   "name_ar": "أرامكو السعودية",
+   "sector": "Energy",
+   "isin": "SA14TG012N13"
+  },
+  {
+   "ticker": "2223.SR",
+   "code": "2223",
+   "name_en": "Luberef",
+   "name_ar": "لوبريف",
+   "sector": "Materials",
+   "isin": "SA15HG50NH12"
+  },
+  {
+   "ticker": "2230.SR",
+   "code": "2230",
+   "name_en": "Chemical",
+   "name_ar": "الكيميائية",
+   "sector": "Materials",
+   "isin": "SA0007879345"
+  },
+  {
+   "ticker": "2240.SR",
+   "code": "2240",
+   "name_en": "Senaat",
+   "name_ar": "صناعات",
+   "sector": "Materials",
+   "isin": "SA0007879311"
+  },
+  {
+   "ticker": "2250.SR",
+   "code": "2250",
+   "name_en": "SIIG",
+   "name_ar": "المجموعة السعودية",
+   "sector": "Materials",
+   "isin": "SA0007879329"
+  },
+  {
+   "ticker": "2270.SR",
+   "code": "2270",
+   "name_en": "SADAFCO",
+   "name_ar": "سدافكو",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879337"
+  },
+  {
+   "ticker": "2280.SR",
+   "code": "2280",
+   "name_en": "Almarai",
+   "name_ar": "المراعي",
+   "sector": "Food & Beverages",
+   "isin": "SA000A0ETHT1"
+  },
+  {
+   "ticker": "2281.SR",
+   "code": "2281",
+   "name_en": "Tanmiah",
+   "name_ar": "تنمية",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2282.SR",
+   "code": "2282",
+   "name_en": "Naqi",
+   "name_ar": "نقي",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2283.SR",
+   "code": "2283",
+   "name_en": "First Mills",
+   "name_ar": "المطاحن الأولى",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2284.SR",
+   "code": "2284",
+   "name_en": "Modern Mills",
+   "name_ar": "المطاحن الحديثة",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2285.SR",
+   "code": "2285",
+   "name_en": "Arabian Mills",
+   "name_ar": "المطاحن العربية",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2286.SR",
+   "code": "2286",
+   "name_en": "Fourth Mills",
+   "name_ar": "المطاحن الرابعة",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2287.SR",
+   "code": "2287",
+   "name_en": "Intaj",
+   "name_ar": "إنتاج",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "2290.SR",
+   "code": "2290",
+   "name_en": "Yansab",
+   "name_ar": "ينساب",
+   "sector": "Materials",
+   "isin": "SA000A0B89Q3"
+  },
+  {
+   "ticker": "2300.SR",
+   "code": "2300",
+   "name_en": "SPM",
+   "name_ar": "صناعة الورق",
+   "sector": "Materials",
+   "isin": "SA000A0HN9S1"
+  },
+  {
+   "ticker": "2310.SR",
+   "code": "2310",
+   "name_en": "Sipchem",
+   "name_ar": "سبكيم العالمية",
+   "sector": "Materials",
+   "isin": "SA000A0HN9P7"
+  },
+  {
+   "ticker": "2320.SR",
+   "code": "2320",
+   "name_en": "Al Babtain",
+   "name_ar": "البابطين",
+   "sector": "Capital Goods",
+   "isin": "SA000A0HNF10"
+  },
+  {
+   "ticker": "2330.SR",
+   "code": "2330",
+   "name_en": "Advanced",
+   "name_ar": "المتقدمة",
+   "sector": "Materials",
+   "isin": "SA000A0KFKV1"
+  },
+  {
+   "ticker": "2340.SR",
+   "code": "2340",
+   "name_en": "Artex",
+   "name_ar": "ارتيكس",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "—"
+  },
+  {
+   "ticker": "2350.SR",
+   "code": "2350",
+   "name_en": "Saudi Kayan",
+   "name_ar": "كيان السعودية",
+   "sector": "Materials",
+   "isin": "SA000A0HN9R3"
+  },
+  {
+   "ticker": "2360.SR",
+   "code": "2360",
+   "name_en": "SVCP",
+   "name_ar": "الفخارية",
+   "sector": "Materials",
+   "isin": "SA000A0LB2C5"
+  },
+  {
+   "ticker": "2370.SR",
+   "code": "2370",
+   "name_en": "MISK",
+   "name_ar": "مسك",
+   "sector": "Capital Goods",
+   "isin": "SA000A0HNF51"
+  },
+  {
+   "ticker": "2380.SR",
+   "code": "2380",
+   "name_en": "Petro Rabigh",
+   "name_ar": "بترو رابغ",
+   "sector": "Energy",
+   "isin": "SA12C051UH11"
+  },
+  {
+   "ticker": "2381.SR",
+   "code": "2381",
+   "name_en": "Arabian Drilling",
+   "name_ar": "الحفر العربية",
+   "sector": "Energy",
+   "isin": "SA15HG522N13"
+  },
+  {
+   "ticker": "2382.SR",
+   "code": "2382",
+   "name_en": "ADES Holding",
+   "name_ar": "أديس",
+   "sector": "Energy",
+   "isin": "SA15LGS12N14"
+  },
+  {
+   "ticker": "3002.SR",
+   "code": "3002",
+   "name_en": "Najran Cement",
+   "name_ar": "أسمنت نجران",
+   "sector": "Materials",
+   "isin": "SA000A0KFKX7"
+  },
+  {
+   "ticker": "3003.SR",
+   "code": "3003",
+   "name_en": "City Cement",
+   "name_ar": "أسمنت المدينة",
+   "sector": "Materials",
+   "isin": "SA000A0LE310"
+  },
+  {
+   "ticker": "3004.SR",
+   "code": "3004",
+   "name_en": "Northern Cement",
+   "name_ar": "أسمنت الشمالية",
+   "sector": "Materials",
+   "isin": "SA000A0HNF44"
+  },
+  {
+   "ticker": "3005.SR",
+   "code": "3005",
+   "name_en": "Umm Al-Qura Cement",
+   "name_ar": "أسمنت ام القرى",
+   "sector": "Materials",
+   "isin": "SA13DG50HA14"
+  },
+  {
+   "ticker": "3007.SR",
+   "code": "3007",
+   "name_en": "Oasis",
+   "name_ar": "الواحة",
+   "sector": "Materials",
+   "isin": "—"
+  },
+  {
+   "ticker": "3008.SR",
+   "code": "3008",
+   "name_en": "Alkathiri",
+   "name_ar": "الكثيري",
+   "sector": "Materials",
+   "isin": "—"
+  },
+  {
+   "ticker": "3010.SR",
+   "code": "3010",
+   "name_en": "Arabian Cement",
+   "name_ar": "أسمنت العربية",
+   "sector": "Materials",
+   "isin": "SA0007879550"
+  },
+  {
+   "ticker": "3020.SR",
+   "code": "3020",
+   "name_en": "Yamama Cement",
+   "name_ar": "أسمنت اليمامة",
+   "sector": "Materials",
+   "isin": "SA0007879568"
+  },
+  {
+   "ticker": "3030.SR",
+   "code": "3030",
+   "name_en": "Saudi Cement",
+   "name_ar": "أسمنت السعودية",
+   "sector": "Materials",
+   "isin": "SA0007879543"
+  },
+  {
+   "ticker": "3040.SR",
+   "code": "3040",
+   "name_en": "Qassim Cement",
+   "name_ar": "أسمنت القصيم",
+   "sector": "Materials",
+   "isin": "SA0007879535"
+  },
+  {
+   "ticker": "3050.SR",
+   "code": "3050",
+   "name_en": "Southern Cement",
+   "name_ar": "أسمنت الجنوب",
+   "sector": "Materials",
+   "isin": "SA0007879527"
+  },
+  {
+   "ticker": "3060.SR",
+   "code": "3060",
+   "name_en": "Yanbu Cement",
+   "name_ar": "أسمنت ينبع",
+   "sector": "Materials",
+   "isin": "SA0007879519"
+  },
+  {
+   "ticker": "3080.SR",
+   "code": "3080",
+   "name_en": "Eastern Cement",
+   "name_ar": "أسمنت الشرقية",
+   "sector": "Materials",
+   "isin": "SA0007879493"
+  },
+  {
+   "ticker": "3090.SR",
+   "code": "3090",
+   "name_en": "Tabuk Cement",
+   "name_ar": "أسمنت تبوك",
+   "sector": "Materials",
+   "isin": "SA0007879485"
+  },
+  {
+   "ticker": "3091.SR",
+   "code": "3091",
+   "name_en": "Jouf Cement",
+   "name_ar": "أسمنت الجوف",
+   "sector": "Materials",
+   "isin": "SA000A0HNF28"
+  },
+  {
+   "ticker": "3092.SR",
+   "code": "3092",
+   "name_en": "Riyadh Cement",
+   "name_ar": "أسمنت الرياض",
+   "sector": "Materials",
+   "isin": "SA13IG510213"
+  },
+  {
+   "ticker": "4001.SR",
+   "code": "4001",
+   "name_en": "Abdullah Al Othaim Markets",
+   "name_ar": "أسواق ع العثيم",
+   "sector": "Consumer Staples Retail",
+   "isin": "SA000A0HNF77"
+  },
+  {
+   "ticker": "4002.SR",
+   "code": "4002",
+   "name_en": "Mouwasat",
+   "name_ar": "المواساة",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA11TG510413"
+  },
+  {
+   "ticker": "4003.SR",
+   "code": "4003",
+   "name_en": "eXtra",
+   "name_ar": "إكسترا",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA11TG510013"
+  },
+  {
+   "ticker": "4004.SR",
+   "code": "4004",
+   "name_en": "Dallah Healthcare",
+   "name_ar": "دله الصحية",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA000A0LE385"
+  },
+  {
+   "ticker": "4005.SR",
+   "code": "4005",
+   "name_en": "CARE",
+   "name_ar": "رعاية",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA12AG50AH14"
+  },
+  {
+   "ticker": "4006.SR",
+   "code": "4006",
+   "name_en": "Farm Superstores",
+   "name_ar": "أسواق المزرعة",
+   "sector": "Consumer Staples Retail",
+   "isin": "SA12AG50U013"
+  },
+  {
+   "ticker": "4007.SR",
+   "code": "4007",
+   "name_en": "Alhammadi",
+   "name_ar": "الحمادي",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA12HG51A613"
+  },
+  {
+   "ticker": "4008.SR",
+   "code": "4008",
+   "name_en": "SACO",
+   "name_ar": "ساكو",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA133G512615"
+  },
+  {
+   "ticker": "4009.SR",
+   "code": "4009",
+   "name_en": "Saudi German Health",
+   "name_ar": "السعودي الألماني الصحية",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA13KG50IH12"
+  },
+  {
+   "ticker": "4011.SR",
+   "code": "4011",
+   "name_en": "Lazurde",
+   "name_ar": "لازوردي",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "SA13OG501013"
+  },
+  {
+   "ticker": "4012.SR",
+   "code": "4012",
+   "name_en": "Al-Aseel",
+   "name_ar": "الأصيل",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "—"
+  },
+  {
+   "ticker": "4013.SR",
+   "code": "4013",
+   "name_en": "Dr. Sulaiman Al Habib",
+   "name_ar": "سليمان الحبيب",
+   "sector": "Health Care Equipment & Services",
+   "isin": "SA13NG50I013"
+  },
+  {
+   "ticker": "4014.SR",
+   "code": "4014",
+   "name_en": "Equipment House",
+   "name_ar": "دار المعدات",
+   "sector": "Health Care Equipment & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4015.SR",
+   "code": "4015",
+   "name_en": "Jamjoom Pharma",
+   "name_ar": "جمجوم فارما",
+   "sector": "Pharma, Biotech & Life Sciences",
+   "isin": "—"
+  },
+  {
+   "ticker": "4016.SR",
+   "code": "4016",
+   "name_en": "Avalon Pharma",
+   "name_ar": "أفالون فارما",
+   "sector": "Pharma, Biotech & Life Sciences",
+   "isin": "—"
+  },
+  {
+   "ticker": "4017.SR",
+   "code": "4017",
+   "name_en": "Fakeeh Care",
+   "name_ar": "فقيه الطبية",
+   "sector": "Health Care Equipment & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4018.SR",
+   "code": "4018",
+   "name_en": "Almoosa",
+   "name_ar": "الموسى",
+   "sector": "Health Care Equipment & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4019.SR",
+   "code": "4019",
+   "name_en": "SMC Healthcare",
+   "name_ar": "اس ام سي للرعاية الصحية",
+   "sector": "Health Care Equipment & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4020.SR",
+   "code": "4020",
+   "name_en": "Saudi Real Estate",
+   "name_ar": "العقارية",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA0007879501"
+  },
+  {
+   "ticker": "4021.SR",
+   "code": "4021",
+   "name_en": "CMCER",
+   "name_ar": "المركز الكندي الطبي",
+   "sector": "Health Care Equipment & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4030.SR",
+   "code": "4030",
+   "name_en": "Bahri",
+   "name_ar": "البحري",
+   "sector": "Energy",
+   "isin": "SA0007879402"
+  },
+  {
+   "ticker": "4031.SR",
+   "code": "4031",
+   "name_en": "SGS",
+   "name_ar": "الخدمات الأرضية",
+   "sector": "Transportation",
+   "isin": "SA12BG51U213"
+  },
+  {
+   "ticker": "4040.SR",
+   "code": "4040",
+   "name_en": "SAPTCO",
+   "name_ar": "سابتكو",
+   "sector": "Transportation",
+   "isin": "SA0007879410"
+  },
+  {
+   "ticker": "4050.SR",
+   "code": "4050",
+   "name_en": "SASCO",
+   "name_ar": "ساسكو",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA0007879451"
+  },
+  {
+   "ticker": "4051.SR",
+   "code": "4051",
+   "name_en": "Baazeem",
+   "name_ar": "باعظيم",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4061.SR",
+   "code": "4061",
+   "name_en": "Anaam Holding",
+   "name_ar": "أنعام القابضة",
+   "sector": "Consumer Staples Retail",
+   "isin": "SA0007879477"
+  },
+  {
+   "ticker": "4070.SR",
+   "code": "4070",
+   "name_en": "Tihama",
+   "name_ar": "تهامة",
+   "sector": "Media & Entertainment",
+   "isin": "SA0007879469"
+  },
+  {
+   "ticker": "4071.SR",
+   "code": "4071",
+   "name_en": "Alarabia",
+   "name_ar": "العربية",
+   "sector": "Media & Entertainment",
+   "isin": "—"
+  },
+  {
+   "ticker": "4072.SR",
+   "code": "4072",
+   "name_en": "MBC Group",
+   "name_ar": "مجموعة إم بي سي",
+   "sector": "Media & Entertainment",
+   "isin": "—"
+  },
+  {
+   "ticker": "4080.SR",
+   "code": "4080",
+   "name_en": "Sinad Holding",
+   "name_ar": "سناد القابضة",
+   "sector": "Diversified Financials",
+   "isin": "SA0007879386"
+  },
+  {
+   "ticker": "4081.SR",
+   "code": "4081",
+   "name_en": "Nayifat",
+   "name_ar": "النايفات",
+   "sector": "Diversified Financials",
+   "isin": "—"
+  },
+  {
+   "ticker": "4082.SR",
+   "code": "4082",
+   "name_en": "MRNA",
+   "name_ar": "مرنة",
+   "sector": "Diversified Financials",
+   "isin": "—"
+  },
+  {
+   "ticker": "4083.SR",
+   "code": "4083",
+   "name_en": "Tasheel",
+   "name_ar": "تسهيل",
+   "sector": "Diversified Financials",
+   "isin": "—"
+  },
+  {
+   "ticker": "4084.SR",
+   "code": "4084",
+   "name_en": "Derayah",
+   "name_ar": "دراية",
+   "sector": "Diversified Financials",
+   "isin": "—"
+  },
+  {
+   "ticker": "4090.SR",
+   "code": "4090",
+   "name_en": "Taiba",
+   "name_ar": "طيبة",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0BLA96"
+  },
+  {
+   "ticker": "4100.SR",
+   "code": "4100",
+   "name_en": "Makkah Construction",
+   "name_ar": "مكة",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0BLA88"
+  },
+  {
+   "ticker": "4110.SR",
+   "code": "4110",
+   "name_en": "BATEC",
+   "name_ar": "باتك",
+   "sector": "Capital Goods",
+   "isin": "SA0007879436"
+  },
+  {
+   "ticker": "4130.SR",
+   "code": "4130",
+   "name_en": "Saudi DARB",
+   "name_ar": "درب السعودية",
+   "sector": "Diversified Financials",
+   "isin": "SA0007879378"
+  },
+  {
+   "ticker": "4140.SR",
+   "code": "4140",
+   "name_en": "Sadarat",
+   "name_ar": "صادرات",
+   "sector": "Capital Goods",
+   "isin": "SA0007879436"
+  },
+  {
+   "ticker": "4141.SR",
+   "code": "4141",
+   "name_en": "Al-Omran",
+   "name_ar": "العمران",
+   "sector": "Capital Goods",
+   "isin": "SA13IG500H13"
+  },
+  {
+   "ticker": "4142.SR",
+   "code": "4142",
+   "name_en": "Riyadh Cables",
+   "name_ar": "كابلات الرياض",
+   "sector": "Capital Goods",
+   "isin": "SA13KGS0AH13"
+  },
+  {
+   "ticker": "4143.SR",
+   "code": "4143",
+   "name_en": "Talco",
+   "name_ar": "تالكو",
+   "sector": "Materials",
+   "isin": "—"
+  },
+  {
+   "ticker": "4144.SR",
+   "code": "4144",
+   "name_en": "Raoum",
+   "name_ar": "رؤوم",
+   "sector": "Capital Goods",
+   "isin": "—"
+  },
+  {
+   "ticker": "4145.SR",
+   "code": "4145",
+   "name_en": "Obeikan Glass",
+   "name_ar": "العبيكان للزجاج",
+   "sector": "Capital Goods",
+   "isin": "SA13IG510H13"
+  },
+  {
+   "ticker": "4146.SR",
+   "code": "4146",
+   "name_en": "JAZ",
+   "name_ar": "جاز",
+   "sector": "Capital Goods",
+   "isin": "—"
+  },
+  {
+   "ticker": "4147.SR",
+   "code": "4147",
+   "name_en": "CGS",
+   "name_ar": "سي جي إس",
+   "sector": "Capital Goods",
+   "isin": "—"
+  },
+  {
+   "ticker": "4150.SR",
+   "code": "4150",
+   "name_en": "Al Tayyar",
+   "name_ar": "التعمير",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA0007879378"
+  },
+  {
+   "ticker": "4160.SR",
+   "code": "4160",
+   "name_en": "Thimar",
+   "name_ar": "ثمار",
+   "sector": "Consumer Staples Retail",
+   "isin": "SA0007879394"
+  },
+  {
+   "ticker": "4161.SR",
+   "code": "4161",
+   "name_en": "BinDawood",
+   "name_ar": "بن داود",
+   "sector": "Consumer Staples Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4162.SR",
+   "code": "4162",
+   "name_en": "Al Munjim",
+   "name_ar": "المنجم",
+   "sector": "Consumer Staples Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4163.SR",
+   "code": "4163",
+   "name_en": "Al Dawaa",
+   "name_ar": "الدواء",
+   "sector": "Consumer Staples Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4164.SR",
+   "code": "4164",
+   "name_en": "Nahdi Medical",
+   "name_ar": "النهدي",
+   "sector": "Consumer Staples Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4165.SR",
+   "code": "4165",
+   "name_en": "Al Majed Oud",
+   "name_ar": "الماجد للعود",
+   "sector": "Consumer Staples Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4170.SR",
+   "code": "4170",
+   "name_en": "Shams",
+   "name_ar": "شمس",
+   "sector": "Consumer Services",
+   "isin": "SA0007879444"
+  },
+  {
+   "ticker": "4180.SR",
+   "code": "4180",
+   "name_en": "Ftihi Group",
+   "name_ar": "مجموعة فتيحي",
+   "sector": "Consumer Durables & Apparel",
+   "isin": "SA0007879428"
+  },
+  {
+   "ticker": "4190.SR",
+   "code": "4190",
+   "name_en": "Jarir",
+   "name_ar": "جرير",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA000A0BLA62"
+  },
+  {
+   "ticker": "4191.SR",
+   "code": "4191",
+   "name_en": "Abu Moati",
+   "name_ar": "أبو معطي",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4192.SR",
+   "code": "4192",
+   "name_en": "Alsaif Gallery",
+   "name_ar": "السيف غاليري",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4193.SR",
+   "code": "4193",
+   "name_en": "Nice One",
+   "name_ar": "نايس ون",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4194.SR",
+   "code": "4194",
+   "name_en": "Build Station",
+   "name_ar": "محطة البناء",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "—"
+  },
+  {
+   "ticker": "4200.SR",
+   "code": "4200",
+   "name_en": "Aldrees",
+   "name_ar": "الدريس",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA000A0HN9M4"
+  },
+  {
+   "ticker": "4210.SR",
+   "code": "4210",
+   "name_en": "SRMG",
+   "name_ar": "الأبحاث والإعلام",
+   "sector": "Media & Entertainment",
+   "isin": "SA000A0HN9T9"
+  },
+  {
+   "ticker": "4220.SR",
+   "code": "4220",
+   "name_en": "Emaar EC",
+   "name_ar": "إعمار",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0D9HK3"
+  },
+  {
+   "ticker": "4230.SR",
+   "code": "4230",
+   "name_en": "Red Sea International",
+   "name_ar": "البحر الأحمر",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0D9HL1"
+  },
+  {
+   "ticker": "4240.SR",
+   "code": "4240",
+   "name_en": "Cenomi Retail",
+   "name_ar": "سينومي ريتيل",
+   "sector": "Consumer Discretionary Retail",
+   "isin": "SA000A0HNF69"
+  },
+  {
+   "ticker": "4250.SR",
+   "code": "4250",
+   "name_en": "Jabal Omar",
+   "name_ar": "جبل عمر",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0HNFB8"
+  },
+  {
+   "ticker": "4260.SR",
+   "code": "4260",
+   "name_en": "Budget Saudi",
+   "name_ar": "بدجت السعودية",
+   "sector": "Transportation",
+   "isin": "SA000A0D9HK3"
+  },
+  {
+   "ticker": "4261.SR",
+   "code": "4261",
+   "name_en": "Theeb Rent A Car",
+   "name_ar": "ذيب",
+   "sector": "Transportation",
+   "isin": "—"
+  },
+  {
+   "ticker": "4262.SR",
+   "code": "4262",
+   "name_en": "Lumi",
+   "name_ar": "لومي",
+   "sector": "Transportation",
+   "isin": "SA12HG50IH13"
+  },
+  {
+   "ticker": "4263.SR",
+   "code": "4263",
+   "name_en": "SAL",
+   "name_ar": "سال",
+   "sector": "Transportation",
+   "isin": "—"
+  },
+  {
+   "ticker": "4264.SR",
+   "code": "4264",
+   "name_en": "Flynas",
+   "name_ar": "طيران ناس",
+   "sector": "Transportation",
+   "isin": "—"
+  },
+  {
+   "ticker": "4265.SR",
+   "code": "4265",
+   "name_en": "Shari",
+   "name_ar": "شري",
+   "sector": "Transportation",
+   "isin": "—"
+  },
+  {
+   "ticker": "4270.SR",
+   "code": "4270",
+   "name_en": "Printing & Packaging",
+   "name_ar": "طباعة وتغليف",
+   "sector": "Capital Goods",
+   "isin": "SA000A0KFKL0"
+  },
+  {
+   "ticker": "4280.SR",
+   "code": "4280",
+   "name_en": "Kingdom Holding",
+   "name_ar": "المملكة",
+   "sector": "Diversified Financials",
+   "isin": "SA000A0B89D1"
+  },
+  {
+   "ticker": "4290.SR",
+   "code": "4290",
+   "name_en": "Gulf Training",
+   "name_ar": "الخليج للتدريب",
+   "sector": "Consumer Services",
+   "isin": "SA000A0LE351"
+  },
+  {
+   "ticker": "4291.SR",
+   "code": "4291",
+   "name_en": "National Education",
+   "name_ar": "الوطنية للتعليم",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4292.SR",
+   "code": "4292",
+   "name_en": "Ataa",
+   "name_ar": "عطاء",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "4300.SR",
+   "code": "4300",
+   "name_en": "Dar Al Arkan",
+   "name_ar": "دار الأركان",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0HNF85"
+  },
+  {
+   "ticker": "4310.SR",
+   "code": "4310",
+   "name_en": "Knowledge Economic City",
+   "name_ar": "مدينة المعرفة",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA000A0HNE47"
+  },
+  {
+   "ticker": "4320.SR",
+   "code": "4320",
+   "name_en": "Al Andalus",
+   "name_ar": "الأندلس",
+   "sector": "Real Estate Management & Development",
+   "isin": "SA13IG50AH13"
+  },
+  {
+   "ticker": "4321.SR",
+   "code": "4321",
+   "name_en": "Cenomi Centers",
+   "name_ar": "سينومي سنترز",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4322.SR",
+   "code": "4322",
+   "name_en": "Retal",
+   "name_ar": "رتال",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4323.SR",
+   "code": "4323",
+   "name_en": "Sumou",
+   "name_ar": "سمو",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4324.SR",
+   "code": "4324",
+   "name_en": "Banan",
+   "name_ar": "بنان",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4325.SR",
+   "code": "4325",
+   "name_en": "Massar",
+   "name_ar": "مسار",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4326.SR",
+   "code": "4326",
+   "name_en": "Almajediah",
+   "name_ar": "الماجدية",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4327.SR",
+   "code": "4327",
+   "name_en": "Al Ramz",
+   "name_ar": "الرمز",
+   "sector": "Real Estate Management & Development",
+   "isin": "—"
+  },
+  {
+   "ticker": "4330.SR",
+   "code": "4330",
+   "name_en": "Riyad REIT",
+   "name_ar": "الرياض ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4331.SR",
+   "code": "4331",
+   "name_en": "Aljazira REIT",
+   "name_ar": "الجزيرة ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4332.SR",
+   "code": "4332",
+   "name_en": "Jadwa REIT Alharamain",
+   "name_ar": "جدوى ريت الحرمين",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4333.SR",
+   "code": "4333",
+   "name_en": "Taleem REIT",
+   "name_ar": "تعليم ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4334.SR",
+   "code": "4334",
+   "name_en": "Al Maather REIT",
+   "name_ar": "المعذر ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4335.SR",
+   "code": "4335",
+   "name_en": "Musharaka REIT",
+   "name_ar": "مشاركة ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4336.SR",
+   "code": "4336",
+   "name_en": "Mulkia REIT",
+   "name_ar": "ملكية ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4337.SR",
+   "code": "4337",
+   "name_en": "Al Aziziyah REIT",
+   "name_ar": "العزيزية ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4338.SR",
+   "code": "4338",
+   "name_en": "AlAhli REIT 1",
+   "name_ar": "الأهلي ريت 1",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4339.SR",
+   "code": "4339",
+   "name_en": "Derayah REIT",
+   "name_ar": "دراية ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4340.SR",
+   "code": "4340",
+   "name_en": "Al Rajhi REIT",
+   "name_ar": "الراجحي ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4342.SR",
+   "code": "4342",
+   "name_en": "Jadwa REIT Saudi",
+   "name_ar": "جدوى ريت السعودية",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4344.SR",
+   "code": "4344",
+   "name_en": "SEDCO Capital REIT",
+   "name_ar": "سدكو كابيتال ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4345.SR",
+   "code": "4345",
+   "name_en": "Alinma Retail REIT",
+   "name_ar": "الإنماء ريت للتجزئة",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4346.SR",
+   "code": "4346",
+   "name_en": "MEFIC REIT",
+   "name_ar": "ميفك ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4347.SR",
+   "code": "4347",
+   "name_en": "Bonyan REIT",
+   "name_ar": "بنيان ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4348.SR",
+   "code": "4348",
+   "name_en": "Alkhabeer REIT",
+   "name_ar": "الخبير ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4349.SR",
+   "code": "4349",
+   "name_en": "Alinma Hospitality REIT",
+   "name_ar": "الإنماء ريت الفندقي",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "4350.SR",
+   "code": "4350",
+   "name_en": "SAB REIT",
+   "name_ar": "الاستثمار ريت",
+   "sector": "REITs",
+   "isin": "—"
+  },
+  {
+   "ticker": "5110.SR",
+   "code": "5110",
+   "name_en": "Saudi Electricity",
+   "name_ar": "كهرباء السعودية",
+   "sector": "Utilities",
+   "isin": "SA0007879691"
+  },
+  {
+   "ticker": "6001.SR",
+   "code": "6001",
+   "name_en": "Halwani Bros",
+   "name_ar": "حلواني إخوان",
+   "sector": "Food & Beverages",
+   "isin": "SA000A0HNF93"
+  },
+  {
+   "ticker": "6002.SR",
+   "code": "6002",
+   "name_en": "Herfy Foods",
+   "name_ar": "هرفي للأغذية",
+   "sector": "Food & Beverages",
+   "isin": "SA000A0LE369"
+  },
+  {
+   "ticker": "6004.SR",
+   "code": "6004",
+   "name_en": "Catrion",
+   "name_ar": "كاتريون",
+   "sector": "Consumer Services",
+   "isin": "SA11LGS1IH13"
+  },
+  {
+   "ticker": "6010.SR",
+   "code": "6010",
+   "name_en": "NADEC",
+   "name_ar": "نادك",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879600"
+  },
+  {
+   "ticker": "6012.SR",
+   "code": "6012",
+   "name_en": "Raydan",
+   "name_ar": "ريدان",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6013.SR",
+   "code": "6013",
+   "name_en": "Food Development",
+   "name_ar": "التطويرية الغذائية",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "6014.SR",
+   "code": "6014",
+   "name_en": "Al Amar",
+   "name_ar": "الآمار",
+   "sector": "Food & Beverages",
+   "isin": "—"
+  },
+  {
+   "ticker": "6015.SR",
+   "code": "6015",
+   "name_en": "Americana",
+   "name_ar": "أمريكانا",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6016.SR",
+   "code": "6016",
+   "name_en": "Burgerizzr",
+   "name_ar": "برغرايززر",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6017.SR",
+   "code": "6017",
+   "name_en": "Jahez",
+   "name_ar": "جاهز",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6018.SR",
+   "code": "6018",
+   "name_en": "Al Andiya",
+   "name_ar": "الأندية للرياضة",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6019.SR",
+   "code": "6019",
+   "name_en": "Almasar Alshamil",
+   "name_ar": "المسار الشامل",
+   "sector": "Consumer Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "6020.SR",
+   "code": "6020",
+   "name_en": "GACO",
+   "name_ar": "جاكو",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879618"
+  },
+  {
+   "ticker": "6040.SR",
+   "code": "6040",
+   "name_en": "Tabuk Agriculture",
+   "name_ar": "تبوك الزراعية",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879634"
+  },
+  {
+   "ticker": "6050.SR",
+   "code": "6050",
+   "name_en": "National Fisheries",
+   "name_ar": "الأسماك",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879642"
+  },
+  {
+   "ticker": "6060.SR",
+   "code": "6060",
+   "name_en": "SADECO",
+   "name_ar": "الشرقية للتنمية",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879659"
+  },
+  {
+   "ticker": "6070.SR",
+   "code": "6070",
+   "name_en": "Al Jouf",
+   "name_ar": "الجوف",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879667"
+  },
+  {
+   "ticker": "6090.SR",
+   "code": "6090",
+   "name_en": "JADCO",
+   "name_ar": "جازادكو",
+   "sector": "Food & Beverages",
+   "isin": "SA0007879683"
+  },
+  {
+   "ticker": "7010.SR",
+   "code": "7010",
+   "name_en": "STC",
+   "name_ar": "اس تي سي",
+   "sector": "Telecommunication Services",
+   "isin": "SA0007879543"
+  },
+  {
+   "ticker": "7020.SR",
+   "code": "7020",
+   "name_en": "Mobily",
+   "name_ar": "إتحاد إتصالات",
+   "sector": "Telecommunication Services",
+   "isin": "SA000A0DM5P3"
+  },
+  {
+   "ticker": "7030.SR",
+   "code": "7030",
+   "name_en": "Zain KSA",
+   "name_ar": "زين السعودية",
+   "sector": "Telecommunication Services",
+   "isin": "SA000A0LE344"
+  },
+  {
+   "ticker": "7040.SR",
+   "code": "7040",
+   "name_en": "Etihad GO Telecom",
+   "name_ar": "قو للإتصالات",
+   "sector": "Telecommunication Services",
+   "isin": "SA000A0LE393"
+  },
+  {
+   "ticker": "7200.SR",
+   "code": "7200",
+   "name_en": "MIS",
+   "name_ar": "ام آي اس",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "7201.SR",
+   "code": "7201",
+   "name_en": "Arabian Sea",
+   "name_ar": "بحر العرب",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "7202.SR",
+   "code": "7202",
+   "name_en": "Solutions",
+   "name_ar": "سلوشنز",
+   "sector": "Software & Services",
+   "isin": "SA12BG50IH13"
+  },
+  {
+   "ticker": "7203.SR",
+   "code": "7203",
+   "name_en": "Elm",
+   "name_ar": "علم",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "7204.SR",
+   "code": "7204",
+   "name_en": "Tubi",
+   "name_ar": "توبي",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "7211.SR",
+   "code": "7211",
+   "name_en": "Azm",
+   "name_ar": "عزم",
+   "sector": "Software & Services",
+   "isin": "—"
+  },
+  {
+   "ticker": "8010.SR",
+   "code": "8010",
+   "name_en": "Tawuniya",
+   "name_ar": "التعاونية",
+   "sector": "Insurance",
+   "isin": "SA0007879709"
+  },
+  {
+   "ticker": "8012.SR",
+   "code": "8012",
+   "name_en": "Jazira Takaful",
+   "name_ar": "جزيرة تكافل",
+   "sector": "Insurance",
+   "isin": "SA12EG51UH12"
+  },
+  {
+   "ticker": "8020.SR",
+   "code": "8020",
+   "name_en": "Malath Insurance",
+   "name_ar": "ملاذ للتأمين",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKR9"
+  },
+  {
+   "ticker": "8030.SR",
+   "code": "8030",
+   "name_en": "MedGulf",
+   "name_ar": "ميدغلف للتأمين",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKS7"
+  },
+  {
+   "ticker": "8040.SR",
+   "code": "8040",
+   "name_en": "Mutakamela",
+   "name_ar": "متكاملة",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKT5"
+  },
+  {
+   "ticker": "8050.SR",
+   "code": "8050",
+   "name_en": "Salama",
+   "name_ar": "سلامة",
+   "sector": "Insurance",
+   "isin": "SA000A0D9HL1"
+  },
+  {
+   "ticker": "8060.SR",
+   "code": "8060",
+   "name_en": "Walaa",
+   "name_ar": "ولاء",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKU3"
+  },
+  {
+   "ticker": "8070.SR",
+   "code": "8070",
+   "name_en": "Arabian Shield",
+   "name_ar": "الدرع العربي",
+   "sector": "Insurance",
+   "isin": "SA000A0HNE96"
+  },
+  {
+   "ticker": "8100.SR",
+   "code": "8100",
+   "name_en": "SAICO",
+   "name_ar": "سايكو",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKW9"
+  },
+  {
+   "ticker": "8120.SR",
+   "code": "8120",
+   "name_en": "Gulf Union",
+   "name_ar": "إتحاد الخليج الأهلية",
+   "sector": "Insurance",
+   "isin": "SA000A0LE3A4"
+  },
+  {
+   "ticker": "8150.SR",
+   "code": "8150",
+   "name_en": "ACIG",
+   "name_ar": "أسيج",
+   "sector": "Insurance",
+   "isin": "SA000A0HNE88"
+  },
+  {
+   "ticker": "8160.SR",
+   "code": "8160",
+   "name_en": "AICC",
+   "name_ar": "التأمين العربية",
+   "sector": "Insurance",
+   "isin": "SA000A0LE3B2"
+  },
+  {
+   "ticker": "8170.SR",
+   "code": "8170",
+   "name_en": "Aletihad",
+   "name_ar": "الاتحاد",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKY5"
+  },
+  {
+   "ticker": "8180.SR",
+   "code": "8180",
+   "name_en": "Alsagr Insurance",
+   "name_ar": "الصقر للتأمين",
+   "sector": "Insurance",
+   "isin": "SA000A0KFKZ2"
+  },
+  {
+   "ticker": "8190.SR",
+   "code": "8190",
+   "name_en": "UCA",
+   "name_ar": "المتحدة للتأمين",
+   "sector": "Insurance",
+   "isin": "SA000A0D9HM9"
+  },
+  {
+   "ticker": "8200.SR",
+   "code": "8200",
+   "name_en": "Saudi Re",
+   "name_ar": "الإعادة السعودية",
+   "sector": "Insurance",
+   "isin": "SA000A0LE3C0"
+  },
+  {
+   "ticker": "8210.SR",
+   "code": "8210",
+   "name_en": "Bupa Arabia",
+   "name_ar": "بوبا العربية",
+   "sector": "Insurance",
+   "isin": "SA000A0HNE70"
+  },
+  {
+   "ticker": "8230.SR",
+   "code": "8230",
+   "name_en": "Alrajhi Takaful",
+   "name_ar": "تكافل الراجحي",
+   "sector": "Insurance",
+   "isin": "SA000A0HNE62"
+  },
+  {
+   "ticker": "8240.SR",
+   "code": "8240",
+   "name_en": "Chubb",
+   "name_ar": "تْشب",
+   "sector": "Insurance",
+   "isin": "SA000A0LE3D8"
+  },
+  {
+   "ticker": "8250.SR",
+   "code": "8250",
+   "name_en": "GIG",
+   "name_ar": "جي آي جي",
+   "sector": "Insurance",
+   "isin": "SA11TG51U212"
+  },
+  {
+   "ticker": "8260.SR",
+   "code": "8260",
+   "name_en": "Gulf General",
+   "name_ar": "الخليجية العامة",
+   "sector": "Insurance",
+   "isin": "SA11TG51U413"
+  },
+  {
+   "ticker": "8280.SR",
+   "code": "8280",
+   "name_en": "LIVA",
+   "name_ar": "ليفا",
+   "sector": "Insurance",
+   "isin": "SA000A0HNE54"
+  },
+  {
+   "ticker": "8300.SR",
+   "code": "8300",
+   "name_en": "Wataniya",
+   "name_ar": "الوطنية",
+   "sector": "Insurance",
+   "isin": "SA11LGS1UH12"
+  },
+  {
+   "ticker": "8310.SR",
+   "code": "8310",
+   "name_en": "Amana Insurance",
+   "name_ar": "أمانة للتأمين",
+   "sector": "Insurance",
+   "isin": "SA11LGS12H12"
+  },
+  {
+   "ticker": "8311.SR",
+   "code": "8311",
+   "name_en": "Enaya",
+   "name_ar": "عناية",
+   "sector": "Insurance",
+   "isin": "SA11LGS1AH12"
+  },
+  {
+   "ticker": "8313.SR",
+   "code": "8313",
+   "name_en": "Rasan",
+   "name_ar": "رسن",
+   "sector": "Insurance",
+   "isin": "—"
+  }
+ ]
+}
