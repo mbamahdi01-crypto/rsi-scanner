@@ -24,6 +24,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime
 
@@ -34,7 +35,8 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 from markets import (SAUDI_INDICES, US_INDICES, US_SECTOR_AR, SAUDI_SECTOR_AR,
                      build_universe, market_sectors, refresh_lists,
                      start_background_refresh)
-from scanner import detect_signal, detect_signal_bearish, get_divergence_zone
+from scanner import (backtest_signals, detect_signal, detect_signal_bearish,
+                     get_divergence_zone)
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -81,6 +83,10 @@ DEFAULTS = {
     "rsi_max": 50,          # تنبيه الشراء فقط عندما يكون RSI (عند الاختراق وعند القاع) <= هذه القيمة
     "auto": True,
     "interval_minutes": SCAN_INTERVAL_DEFAULT,
+    "volume_filter": False,     # اشتراط حجم شمعة الاختراق >= 1.5 × متوسط آخر 20 شمعة
+    "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
+    "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
+    "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
 }
 
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -105,6 +111,14 @@ def _load_config():
             cfg["auto"] = saved["auto"]
         if isinstance(saved.get("interval_minutes"), (int, float)):
             cfg["interval_minutes"] = max(5, int(saved["interval_minutes"]))
+        if isinstance(saved.get("volume_filter"), bool):
+            cfg["volume_filter"] = saved["volume_filter"]
+        if isinstance(saved.get("trend_filter"), bool):
+            cfg["trend_filter"] = saved["trend_filter"]
+        if isinstance(saved.get("telegram_token"), str):
+            cfg["telegram_token"] = saved["telegram_token"]
+        if isinstance(saved.get("telegram_chat"), str):
+            cfg["telegram_chat"] = saved["telegram_chat"]
         # فريم التنفيذ: يومي دائماً عند الإقلاع — المستخدم يغيّره وقت الحاجة فقط
         cfg["timeframe"] = DEFAULTS["timeframe"]
     except (OSError, ValueError):
@@ -134,6 +148,9 @@ _state = {
     "last_scan_at": None,
     "last_scan_duration": None,
     "universe_count": 0,
+    "backtest_running": False,
+    "backtest_result": None,
+    "backtest_ticker": None,
 }
 _cfg_lock = threading.Lock()
 _state_lock = threading.Lock()
@@ -252,32 +269,44 @@ def init_db():
             zone_high REAL,
             created_at TEXT,
             rsi_low REAL,
+            stop_loss REAL,
+            target_1 REAL,
+            target_2 REAL,
+            volume_ratio REAL,
             UNIQUE(market, ticker, timeframe, signal_date, direction)
         )
     """)
     conn.commit()
     cols = [r[1] for r in conn.execute("PRAGMA table_info(alerts)").fetchall()]
-    if "rsi_low" not in cols:
-        conn.execute("ALTER TABLE alerts ADD COLUMN rsi_low REAL")
-        conn.commit()
+    for col, ctype in (("rsi_low", "REAL"), ("stop_loss", "REAL"),
+                       ("target_1", "REAL"), ("target_2", "REAL"),
+                       ("volume_ratio", "REAL")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {ctype}")
+    conn.commit()
     conn.close()
 
 
 def save_alert(market, sector, ticker, name, direction, timeframe, signal_date,
                price, rsi_value, peak_level, rsi_low=None,
-               zone_tf=None, zone_low=None, zone_high=None):
+               zone_tf=None, zone_low=None, zone_high=None,
+               stop_loss=None, target_1=None, target_2=None, volume_ratio=None):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
+    cur = conn.execute(
         """INSERT OR IGNORE INTO alerts
            (market, sector, ticker, name, direction, timeframe, signal_date,
-            price, rsi_value, peak_level, rsi_low, zone_timeframe, zone_low, zone_high, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            price, rsi_value, peak_level, rsi_low, zone_timeframe, zone_low, zone_high,
+            stop_loss, target_1, target_2, volume_ratio, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (market, sector, ticker, name, direction, timeframe, str(signal_date),
          price, rsi_value, peak_level, rsi_low, zone_tf, zone_low, zone_high,
+         stop_loss, target_1, target_2, volume_ratio,
          datetime.now().isoformat()),
     )
+    inserted = cur.rowcount > 0
     conn.commit()
     conn.close()
+    return inserted
 
 
 # ==================== جلب البيانات (جماعي) ====================
@@ -337,6 +366,81 @@ def zone_timeframe_for(execution_tf: str) -> str:
 
 
 # ==================== الفحص ====================
+def compute_stops(direction, entry, atr, zone_low, zone_high):
+    """
+    يقترح وقف الخسارة والهدفين بناءً على ATR ومنطقة الطلب/العرض.
+    يرجع (stop_loss, target_1, target_2) أو (None, None, None) إذا تعذر الحساب.
+    """
+    if atr is None or atr <= 0 or entry is None:
+        return None, None, None
+    entry = float(entry)
+    if direction == "bullish":
+        stop = entry - 1.5 * atr
+        if zone_low is not None and zone_low < entry - 0.75 * atr:
+            stop = min(stop, zone_low)
+        stop = min(max(stop, entry - 4 * atr), entry - 0.75 * atr)
+        risk = entry - stop
+        return round(stop, 2), round(entry + 1.5 * risk, 2), round(entry + 2.5 * risk, 2)
+    stop = entry + 1.5 * atr
+    if zone_high is not None and zone_high > entry + 0.75 * atr:
+        stop = max(stop, zone_high)
+    stop = max(min(stop, entry + 4 * atr), entry + 0.75 * atr)
+    risk = stop - entry
+    return round(stop, 2), round(entry - 1.5 * risk, 2), round(entry - 2.5 * risk, 2)
+
+
+def _tg_credentials():
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or _config.get("telegram_token") or ""
+    chat = os.environ.get("TELEGRAM_CHAT_ID") or _config.get("telegram_chat") or ""
+    return token.strip(), chat.strip()
+
+
+def telegram_send(text, token=None, chat_id=None):
+    """يرسل رسالة تيليجرام. يرجع True عند النجاح أو إذا كانت الإعدادات فارغة (لا رسائل)."""
+    token = (token or "").strip() or _tg_credentials()[0]
+    chat_id = (chat_id or "").strip() or _tg_credentials()[1]
+    if not token or not chat_id:
+        return False
+    try:
+        data = urllib.parse.urlencode({
+            "chat_id": chat_id, "text": text, "parse_mode": "HTML",
+            "disable_web_page_preview": "true",
+        }).encode("utf-8")
+        req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+        with urllib.request.urlopen(req, timeout=20) as r:
+            ok = r.status == 200
+            if not ok:
+                print("تيليجرام: استجابة غير متوقعة", r.status)
+            return ok
+    except Exception as e:
+        print("فشل إرسال تيليجرام:", e)
+        return False
+
+
+def telegram_alert_message(a):
+    market = "تاسي" if a["market"] == "saudi" else "أمريكا"
+    tag = "شراء / طلب" if a["direction"] == "bullish" else "بيع / عرض"
+    icon = "🔵" if a["direction"] == "bullish" else "🔴"
+    lines = [
+        f"{icon} <b>{tag}: {a['ticker']}</b>",
+        f"الاسم: {a.get('name') or '—'}",
+        f"السوق: {market} | القطاع: {a.get('sector') or '—'}",
+        f"فريم التنفيذ: {a['timeframe']}",
+        f"شمعة الإشارة: {a['signal_date']}",
+        f"السعر: {a['price']}",
+        f"RSI عند الاختراق: {round(a['rsi_value'], 2)}",
+    ]
+    if a.get("rsi_low") is not None:
+        lines.append(f"قاع RSI: {round(a['rsi_low'], 2)}")
+    if a.get("volume_ratio") is not None:
+        lines.append(f"حجم الاختراق: ×{round(a['volume_ratio'], 2)} المتوسط")
+    if a.get("zone_low") is not None and a.get("zone_high") is not None:
+        lines.append(f"منطقة الطلب/العرض: {round(a['zone_low'], 2)} — {round(a['zone_high'], 2)}")
+    if a.get("stop_loss") is not None:
+        lines.append(f"وقف الخسارة: {a['stop_loss']}")
+    if a.get("target_1") is not None:
+        lines.append(f"الهدف الأول: {a['target_1']} | الهدف الثاني: {a['target_2']}")
+    return "\n".join(lines)
 def run_scan():
     with _state_lock:
         if _state["running"]:
@@ -381,9 +485,16 @@ def run_scan():
         if exec_df is None or len(exec_df) < min_bars:
             continue
         try:
+            vol_on = bool(cfg.get("volume_filter"))
+            trend_on = bool(cfg.get("trend_filter"))
             bullish = detect_signal(exec_df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT,
-                                    TOLERANCE, rsi_max=rsi_max)
-            bearish = detect_signal_bearish(exec_df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE)
+                                    TOLERANCE, rsi_max=rsi_max,
+                                    min_volume_ratio=1.5 if vol_on else None,
+                                    trend_filter=trend_on)
+            bearish = detect_signal_bearish(exec_df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT,
+                                            TOLERANCE,
+                                            min_volume_ratio=1.5 if vol_on else None,
+                                            trend_filter=trend_on)
             for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
                 if not result or not result.get("fresh_breakout"):
                     continue
@@ -392,18 +503,38 @@ def run_scan():
                 if zdf is not None and len(zdf) >= min_bars:
                     zone = get_divergence_zone(zdf, direction, RSI_PERIOD,
                                                PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE)
-                save_alert(
+                zone_low = zone["zone_low"] if zone else None
+                zone_high = zone["zone_high"] if zone else None
+                stop, t1, t2 = compute_stops(direction, result["price"],
+                                             result.get("atr"), zone_low, zone_high)
+                inserted = save_alert(
                     cfg["market"], meta.get("sector", cfg["sector"]), t, meta.get("name", ""),
                     direction, cfg["timeframe"], result["signal_date"],
                     result["price"], result["rsi_value"], result["peak_level"],
                     rsi_low=result.get("rsi_low"),
                     zone_tf=zone_tf,
-                    zone_low=zone["zone_low"] if zone else None,
-                    zone_high=zone["zone_high"] if zone else None,
+                    zone_low=zone_low,
+                    zone_high=zone_high,
+                    stop_loss=stop,
+                    target_1=t1,
+                    target_2=t2,
+                    volume_ratio=result.get("volume_ratio"),
                 )
                 with _state_lock:
                     _state["bullish"] += direction == "bullish"
                     _state["bearish"] += direction == "bearish"
+                if inserted:
+                    a = {
+                        "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
+                        "ticker": t, "name": meta.get("name", ""), "direction": direction,
+                        "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
+                        "price": result["price"], "rsi_value": result["rsi_value"],
+                        "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
+                        "zone_low": zone_low, "zone_high": zone_high,
+                        "stop_loss": stop, "target_1": t1, "target_2": t2,
+                    }
+                    threading.Thread(target=telegram_send,
+                                     args=(telegram_alert_message(a),), daemon=True).start()
         except Exception as e:
             with _state_lock:
                 _state["errors"] += 1
@@ -587,6 +718,14 @@ def api_set_config():
                 _config["interval_minutes"] = max(5, int(data["interval_minutes"]))
             except (TypeError, ValueError):
                 pass
+        if "volume_filter" in data:
+            _config["volume_filter"] = bool(data["volume_filter"])
+        if "trend_filter" in data:
+            _config["trend_filter"] = bool(data["trend_filter"])
+        if "telegram_token" in data and isinstance(data["telegram_token"], str):
+            _config["telegram_token"] = data["telegram_token"].strip()
+        if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
+            _config["telegram_chat"] = data["telegram_chat"].strip()
     _save_config()
     return jsonify(_config_payload())
 
@@ -638,6 +777,79 @@ def api_refresh_lists():
         refresh_lists(force=True)
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"status": "بدأ تحديث قوائم الأسهم والقطاعات..."})
+
+
+@app.route("/api/telegram-test", methods=["POST"])
+def api_telegram_test():
+    data = request.get_json(force=True, silent=True) or {}
+    token = str(data.get("token", "")).strip()
+    chat = str(data.get("chat", "")).strip()
+    token = token or _tg_credentials()[0]
+    chat = chat or _tg_credentials()[1]
+    if not token or not chat:
+        return jsonify({"ok": False, "error": "أدخل توكن البوت ومعرف الشات أولاً"}), 400
+    ok = telegram_send("✅ رسالة تجريبية من فلتر انفراج RSI — الإشعارات تعمل!", token, chat)
+    if not ok:
+        return jsonify({"ok": False, "error": "فشل الإرسال — تحقق من التوكن والمعرف (رسائل البوت إلى الشات ممنوعة حتى يبدأه المستخدم)"}), 400
+    return jsonify({"ok": True, "status": "وصلت رسالة تجريبية ✓"})
+
+
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    data = request.get_json(force=True, silent=True) or {}
+    ticker = str(data.get("ticker", "")).strip()
+    timeframe = str(data.get("timeframe", "1d"))
+    horizon = int(data.get("horizon", 10) or 10)
+    if not ticker:
+        return jsonify({"error": "أدخل رمز السهم أولاً (مثال: 2222.SR أو AAPL)"}), 400
+    if timeframe not in EXECUTION_TIMEFRAMES:
+        timeframe = "1d"
+    with _state_lock:
+        if _state.get("backtest_running"):
+            return jsonify({"error": "باك-تست جارٍ بالفعل — انتظر النتيجة"}), 409
+        _state["backtest_running"] = True
+        _state["backtest_result"] = None
+        _state["backtest_ticker"] = ticker
+
+    def _run():
+        try:
+            with _cfg_lock:
+                cfg = dict(_config)
+            data_map = fetch_batch([ticker], timeframe)
+            df = data_map.get(ticker)
+            if df is None or len(df) < 60:
+                with _state_lock:
+                    _state["backtest_running"] = False
+                    _state["backtest_result"] = {"error": "لا توجد بيانات كافية للسهم — تحقق من الرمز والفريم"}
+                return
+            result = backtest_signals(
+                df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE,
+                rsi_max=cfg.get("rsi_max"),
+                min_volume_ratio=1.5 if cfg.get("volume_filter") else None,
+                trend_filter=bool(cfg.get("trend_filter")),
+                horizons=(5, 10, 20), max_bars=400,
+            )
+            with _state_lock:
+                _state["backtest_result"] = result
+        except Exception as e:
+            with _state_lock:
+                _state["backtest_result"] = {"error": f"خطأ في الباك-تست: {e}"}
+        finally:
+            with _state_lock:
+                _state["backtest_running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "جارِ حساب الباك-تست...", "ticker": ticker, "timeframe": timeframe})
+
+
+@app.route("/api/backtest/result")
+def api_backtest_result():
+    with _state_lock:
+        return jsonify({
+            "running": _state.get("backtest_running", False),
+            "result": _state.get("backtest_result"),
+            "ticker": _state.get("backtest_ticker"),
+        })
 
 
 _services_started = False

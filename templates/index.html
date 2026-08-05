@@ -123,6 +123,32 @@
         <label>دورة الفحص التلقائي (دقائق)</label>
         <input type="number" id="interval" min="5" value="30" style="min-width:120px">
       </div>
+      <div class="field">
+        <label>فلتر الحجم (×1.5 المتوسط)</label>
+        <select id="volume-filter" style="min-width:130px">
+          <option value="false">مغلق</option>
+          <option value="true">مفعّل</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>فلتر الاتجاه العام (SMA200)</label>
+        <select id="trend-filter" style="min-width:130px">
+          <option value="false">مغلق</option>
+          <option value="true">مفعّل</option>
+        </select>
+      </div>
+      <div class="field" style="flex-basis:100%">
+        <label>تنبيهات تيليجرام — توكن البوت (أنشئه من @BotFather)</label>
+        <input type="text" id="tg-token" placeholder="123456789:AAF..." style="min-width:300px">
+      </div>
+      <div class="field">
+        <label>معرف الشات (اعرفه من @userinfobot)</label>
+        <input type="text" id="tg-chat" placeholder="-100123456789" style="min-width:180px">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn ghost" onclick="tgTest()">إرسال رسالة تجريبية</button>
+      </div>
     </div>
     <div class="toolbar">
       <button class="btn" onclick="scanNow()">فحص الآن</button>
@@ -179,12 +205,40 @@
           <th>قاع RSI (الانفراج)</th>
           <th>الرقبة المخترقة</th>
           <th>منطقة الطلب/العرض</th>
+          <th>الحجم (×المتوسط)</th>
+          <th>وقف الخسارة</th>
+          <th>الهدف 1</th>
+          <th>الهدف 2</th>
         </tr>
       </thead>
       <tbody id="alerts-body">
-        <tr><td colspan="12" class="empty">جارِ التحميل...</td></tr>
+        <tr><td colspan="16" class="empty">جارِ التحميل...</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="panel">
+    <h3 style="color:#4fd1c5;margin:0 0 10px;">📊 باك-تست أداء الفلتر</h3>
+    <div class="grid">
+      <div class="field">
+        <label>رمز السهم (مثال: 2222.SR أو AAPL)</label>
+        <input type="text" id="bt-ticker" placeholder="2222.SR" style="min-width:160px">
+      </div>
+      <div class="field">
+        <label>الفريم</label>
+        <select id="bt-timeframe">
+          <option value="15m">15 دقيقة</option>
+          <option value="1h">ساعة</option>
+          <option value="1d" selected>يومي</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" onclick="runBacktest()">تشغيل الباك-تست</button>
+      </div>
+    </div>
+    <div id="bt-status" class="muted" style="margin-top:10px;"></div>
+    <div id="bt-result"></div>
   </div>
 </div>
 
@@ -228,6 +282,10 @@ function currentSelection() {
     rsi_max: $('rsi-max').value === '' ? null : parseInt($('rsi-max').value, 10),
     auto: currentConfig ? currentConfig.auto : true,
     interval_minutes: parseInt($('interval').value, 10) || 30,
+    volume_filter: $('volume-filter').value === 'true',
+    trend_filter: $('trend-filter').value === 'true',
+    telegram_token: $('tg-token').value.trim(),
+    telegram_chat: $('tg-chat').value.trim(),
   };
 }
 
@@ -281,6 +339,10 @@ async function loadStatus() {
     const opts = [...$('rsi-max').options].map(o => o.value);
     $('rsi-max').value = opts.includes(String(currentConfig.rsi_max)) ? String(currentConfig.rsi_max) : '';
   }
+  $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
+  $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
+  $('tg-token').value = currentConfig.telegram_token || '';
+  $('tg-chat').value = currentConfig.telegram_chat || '';
 }
 
 async function loadAlerts() {
@@ -292,7 +354,7 @@ async function loadAlerts() {
   const data = await (await fetch(url)).json();
   const body = $('alerts-body');
   if (!data.length) {
-    body.innerHTML = '<tr><td colspan="12" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
+    body.innerHTML = '<tr><td colspan="16" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
     return;
   }
   body.innerHTML = data.map(a => {
@@ -304,6 +366,10 @@ async function loadAlerts() {
       : '—';
     const sectorAr = (meta && (meta.sector_ar[a.sector] || a.sector)) || a.sector;
     const marketAr = a.market === 'saudi' ? 'تاسي' : 'أمريكا';
+    const vol = a.volume_ratio != null ? '×' + Number(a.volume_ratio).toFixed(2) : '—';
+    const stop = a.stop_loss != null ? Number(a.stop_loss).toFixed(2) : '—';
+    const t1 = a.target_1 != null ? Number(a.target_1).toFixed(2) : '—';
+    const t2 = a.target_2 != null ? Number(a.target_2).toFixed(2) : '—';
     return `<tr>
       <td class="ticker">${a.ticker}</td>
       <td class="name">${esc(a.name || '')}</td>
@@ -317,6 +383,10 @@ async function loadAlerts() {
       <td class="muted">${a.rsi_low != null ? Number(a.rsi_low).toFixed(2) : '—'}</td>
       <td>${Number(a.peak_level).toFixed(2)}</td>
       <td>${zone}</td>
+      <td class="muted">${vol}</td>
+      <td>${stop}</td>
+      <td>${t1}</td>
+      <td>${t2}</td>
     </tr>`;
   }).join('');
 }
@@ -347,6 +417,70 @@ async function toggleAuto() {
 async function refreshLists() {
   $('status-line').innerHTML = 'جارِ تحديث قوائم الأسهم والقطاعات من المصادر...';
   await fetch('/api/refresh-lists', { method: 'POST' });
+}
+
+async function tgTest() {
+  const data = currentSelection();
+  const res = await fetch('/api/telegram-test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: data.telegram_token, chat: data.telegram_chat }),
+  });
+  const r = await res.json().catch(() => ({}));
+  $('status-line').innerHTML = res.ok ? (r.status || 'وصلت الرسالة') : (r.error || 'فشل الإرسال');
+}
+
+async function runBacktest() {
+  const ticker = $('bt-ticker').value.trim();
+  if (!ticker) { $('bt-status').innerText = 'أدخل رمز السهم أولاً'; return; }
+  await saveConfig();
+  $('bt-status').innerText = 'جارِ الحساب... قد يستغرق نحو دقيقة.';
+  $('bt-result').innerHTML = '';
+  const res = await fetch('/api/backtest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker, timeframe: $('bt-timeframe').value }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { $('bt-status').innerText = data.error || 'تعذر تشغيل الباك-تست'; return; }
+  pollBacktest();
+}
+
+async function pollBacktest() {
+  const res = await (await fetch('/api/backtest/result')).json().catch(() => ({}));
+  if (!res || res.running || !res.result) { setTimeout(pollBacktest, 2000); return; }
+  if (res.result.error) { $('bt-status').innerText = res.result.error; return; }
+  renderBacktest(res.result, res.ticker || $('bt-ticker').value);
+}
+
+function btFmt(s) {
+  if (!s) return '—';
+  return `${s.win_rate}% (متوسط ${s.avg_return}%)`;
+}
+
+function renderBacktest(res, ticker) {
+  $('bt-status').innerText = `نتائج ${ticker} — فحص ${res.bars} شمعة (آخر ما توفر من التاريخ)`;
+  const row = d => {
+    const s = (res.summary || {})[d];
+    if (!s) return `<tr><td>${d === 'bullish' ? 'طلب / شراء' : 'عرض / بيع'}</td><td colspan="6" class="muted">لا توجد إشارات</td></tr>`;
+    const b5 = s.r5 || {}, b10 = s.r10 || {}, b20 = s.r20 || {};
+    return `<tr>
+      <td>${d === 'bullish' ? 'طلب / شراء' : 'عرض / بيع'}</td>
+      <td>${s.count}</td>
+      <td>${btFmt(b5)}</td>
+      <td>${btFmt(b10)}</td>
+      <td>${btFmt(b20)}</td>
+      <td>${b10.best != null ? b10.best + '%' : '—'}</td>
+      <td>${b10.worst != null ? b10.worst + '%' : '—'}</td>
+    </tr>`;
+  };
+  $('bt-result').innerHTML = `<table>
+    <thead><tr>
+      <th>الاتجاه</th><th>عدد الإشارات</th><th>نجاح بعد 5 شموع</th>
+      <th>نجاح بعد 10</th><th>نجاح بعد 20</th><th>أفضل عائد (10)</th><th>أسوأ عائد (10)</th>
+    </tr></thead>
+    <tbody>${row('bullish')}${row('bearish')}</tbody>
+  </table>`;
 }
 
 async function clearAlerts() {
@@ -402,6 +536,10 @@ $('sector').addEventListener('change', () => onSelectionChanged());
 $('timeframe').addEventListener('change', () => onSelectionChanged());
 $('rsi-max').addEventListener('change', () => onSelectionChanged());
 $('interval').addEventListener('change', debounce(saveConfig, 400));
+$('volume-filter').addEventListener('change', debounce(saveConfig, 400));
+$('trend-filter').addEventListener('change', debounce(saveConfig, 400));
+$('tg-token').addEventListener('change', debounce(saveConfig, 600));
+$('tg-chat').addEventListener('change', debounce(saveConfig, 600));
 $('only-current').addEventListener('change', loadAlerts);
 
 (async function init() {

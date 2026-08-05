@@ -27,6 +27,52 @@ def calculate_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return rsi
 
 
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """متوسط المدى الحقيقي (ATR) بطريقة Wilder — مقياس التقلب لضبط وقف الخسارة والأهداف."""
+    prev_close = close.shift(1)
+    tr = pd.concat([high - low,
+                    (high - prev_close).abs(),
+                    (low - prev_close).abs()], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+
+def _volume_at_break(df: pd.DataFrame, pos: int, threshold: float = 1.5):
+    """
+    يفحص حجم شمعة الاختراق مقابل متوسط آخر 20 شمعة (قبل الاختراق).
+    يرجع (ratio, passed): ratio = حجم الاختراق ÷ متوسط الحجم، passed = هل اجتاز الشرط.
+    """
+    if "Volume" not in df.columns:
+        return None, True
+    vol = df["Volume"]
+    try:
+        avg_vol = vol.iloc[:pos].tail(20).mean()
+    except Exception:
+        return None, True
+    if pd.isna(avg_vol) or avg_vol <= 0:
+        return None, True
+    bar_vol = float(vol.iloc[pos])
+    ratio = float(bar_vol / avg_vol)
+    return ratio, ratio >= threshold
+
+
+def _trend_at_break(df: pd.DataFrame, direction: str, pos: int, period: int = 200):
+    """
+    فلتر الاتجاه العام: الشراء فقط إذا كان السعر فوق المتوسط المتحرك (اتجاه صاعد)،
+    والبيع فقط إذا كان السعر تحت المتوسط (اتجاه هابط).
+    يرجع True/False، أو None إذا كانت البيانات لا تكفي لتحديد الاتجاه.
+    """
+    if "Close" not in df.columns:
+        return None
+    sma = df["Close"].rolling(period).mean()
+    v = sma.iloc[pos]
+    if pd.isna(v):
+        return None
+    close_at_break = float(df["Close"].iloc[pos])
+    if direction == "bullish":
+        return close_at_break > float(v)
+    return close_at_break < float(v)
+
+
 def find_pivots(series: pd.Series, left: int = 3, right: int = 3, mode: str = "low"):
     """
     يرجع مواقع (index مواقع صحيحة) القمم أو القيعان التأرجحية.
@@ -141,12 +187,15 @@ def _find_last_divergence(df: pd.DataFrame, direction: str, rsi_period: int = 14
 
 def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
                    pivot_right: int = 3, tolerance: int = 3, rsi_max: float = None,
-                   fresh_window: int = None):
+                   fresh_window: int = None, min_volume_ratio: float = None,
+                   trend_filter: bool = False, trend_period: int = 200):
     """
     انفراج إيجابي + اختراق الرقبة (أعلى قيمتي RSI عند القاعين) = تنبيه شراء.
     - يُلتقط التنبيه في شمعة الاختراق نفسها (وليس بعد شموع لاحقة).
     - إذا أُعطي rsi_max: يُشترط أن يكون RSI عند الاختراق وعند القاع الحالي <= rsi_max
       (تشبع بيعي / ليس فوق خط الوسط).
+    - min_volume_ratio: يُشترط أن يكون حجم شمعة الاختراق >= النسبة × متوسط آخر 20 شمعة.
+    - trend_filter: يُشترط أن يكون السعر فوق المتوسط المتحرك (اتجاه صاعد).
     يرجع dict أو None.
     """
     info = _find_last_divergence(df, "bullish", rsi_period, pivot_left, pivot_right, tolerance)
@@ -172,6 +221,21 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
     if rsi_max is not None and (rsi_at_break > rsi_max or info["rsi_low"] > rsi_max):
         return None
 
+    vol_ratio, vol_ok = _volume_at_break(df, first_break_pos, min_volume_ratio or 1.5)
+    if min_volume_ratio is not None and not vol_ok:
+        return None
+
+    trend_ok = _trend_at_break(df, "bullish", first_break_pos, trend_period)
+    if trend_filter and trend_ok is False:
+        return None
+
+    atr_val = None
+    if {"High", "Low"}.issubset(df.columns):
+        a = calculate_atr(df["High"], df["Low"], df["Close"], 14)
+        v = a.iloc[first_break_pos]
+        if not pd.isna(v):
+            atr_val = float(v)
+
     return {
         "direction": "bullish",
         "fresh_breakout": is_fresh,
@@ -180,16 +244,22 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
         "rsi_value": rsi_at_break,
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
+        "volume_ratio": vol_ratio,
+        "trend_ok": trend_ok,
+        "atr": atr_val,
     }
 
 
 def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
                            pivot_right: int = 3, tolerance: int = 3, rsi_min: float = None,
-                           fresh_window: int = None):
+                           fresh_window: int = None, min_volume_ratio: float = None,
+                           trend_filter: bool = False, trend_period: int = 200):
     """
     انفراج سلبي + كسر الرقبة (أدنى قيمتي RSI عند القمتين) = تنبيه بيع.
     يُلتقط التنبيه في شمعة الكسر نفسها.
     إذا أُعطي rsi_min: يُشترط أن يكون RSI عند الكسر وعند القمة الحالية >= rsi_min.
+    - min_volume_ratio: يُشترط أن يكون حجم شمعة الكسر >= النسبة × متوسط آخر 20 شمعة.
+    - trend_filter: يُشترط أن يكون السعر تحت المتوسط المتحرك (اتجاه هابط).
     يرجع dict أو None.
     """
     info = _find_last_divergence(df, "bearish", rsi_period, pivot_left, pivot_right, tolerance)
@@ -215,6 +285,21 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
     if rsi_min is not None and (rsi_at_break < rsi_min or info["rsi_low"] < rsi_min):
         return None
 
+    vol_ratio, vol_ok = _volume_at_break(df, first_break_pos, min_volume_ratio or 1.5)
+    if min_volume_ratio is not None and not vol_ok:
+        return None
+
+    trend_ok = _trend_at_break(df, "bearish", first_break_pos, trend_period)
+    if trend_filter and trend_ok is False:
+        return None
+
+    atr_val = None
+    if {"High", "Low"}.issubset(df.columns):
+        a = calculate_atr(df["High"], df["Low"], df["Close"], 14)
+        v = a.iloc[first_break_pos]
+        if not pd.isna(v):
+            atr_val = float(v)
+
     return {
         "direction": "bearish",
         "fresh_breakout": is_fresh,
@@ -223,6 +308,9 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
         "rsi_value": rsi_at_break,
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
+        "volume_ratio": vol_ratio,
+        "trend_ok": trend_ok,
+        "atr": atr_val,
     }
 
 
@@ -247,3 +335,79 @@ def get_divergence_zone(df: pd.DataFrame, direction: str, rsi_period: int = 14,
     zone_date = df.loc[idx, "Date"] if "Date" in df.columns else str(idx)
 
     return {"zone_low": zone_low, "zone_high": zone_high, "zone_date": zone_date}
+
+
+def backtest_signals(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
+                     pivot_right: int = 3, tolerance: int = 3, rsi_max: float = None,
+                     min_volume_ratio: float = None, trend_filter: bool = False,
+                     horizons=(5, 10, 20), max_bars: int = 400):
+    """
+    باك-تست بسيط: يمشي على تاريخ الشموع ويقبض كل إشارة (اختراق طازج عند آخر شمعة)،
+    ثم يقيس العائد بعد h شمعة من كل إشارة، ويجمّع إحصائيات النجاح لكل اتجاه.
+    يرجع dict:
+      {
+        "bars": عدد الشموع المفحوصة,
+        "signals": { "bullish": [...], "bearish": [...] },
+        "summary": { "bullish": {...stats...}, "bearish": {...} }
+      }
+    """
+    df = df.tail(max_bars).reset_index(drop=True)
+    min_bars = rsi_period + pivot_left + pivot_right + 5
+    out = {"bullish": [], "bearish": []}
+    n = len(df)
+    for i in range(min_bars, n):
+        sl = df.iloc[: i + 1]
+        sigs = (
+            ("bullish", detect_signal(sl, rsi_period, pivot_left, pivot_right, tolerance,
+                                      rsi_max=rsi_max, fresh_window=0,
+                                      min_volume_ratio=min_volume_ratio,
+                                      trend_filter=trend_filter)),
+            ("bearish", detect_signal_bearish(sl, rsi_period, pivot_left, pivot_right, tolerance,
+                                              fresh_window=0,
+                                              min_volume_ratio=min_volume_ratio,
+                                              trend_filter=trend_filter)),
+        )
+        for direction, sig in sigs:
+            if not sig:
+                continue
+            entry = sig["price"]
+            if pd.isna(entry) or entry <= 0:
+                continue
+            rec = {
+                "date": sig.get("signal_date"),
+                "entry": round(float(entry), 2),
+                "rsi": round(float(sig["rsi_value"]), 2),
+                "volume": round(float(sig["volume_ratio"]), 2) if sig.get("volume_ratio") is not None else None,
+            }
+            for h in horizons:
+                if i + h < n:
+                    rec["r%d" % h] = round((float(df["Close"].iloc[i + h]) / entry - 1) * 100, 2)
+            out[direction].append(rec)
+
+    def _stats(rows):
+        if not rows:
+            return None
+        horiz = [k for k in ("r5", "r10", "r20") if any(r.get(k) is not None for r in rows)]
+        res = {"count": len(rows)}
+        for h in horiz:
+            vals = [r[h] for r in rows if r.get(h) is not None]
+            if not vals:
+                continue
+            wins = [v for v in vals if v > 0]
+            res[h] = {
+                "win_rate": round(100 * len(wins) / len(vals), 1),
+                "avg_return": round(sum(vals) / len(vals), 2),
+                "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
+                "best": round(max(vals), 2),
+                "worst": round(min(vals), 2),
+            }
+        return res
+
+    return {
+        "bars": n,
+        "signals": out,
+        "summary": {
+            "bullish": _stats(out["bullish"]),
+            "bearish": _stats(out["bearish"]),
+        },
+    }
