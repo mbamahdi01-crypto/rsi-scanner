@@ -3,4 +3,4 @@ gunicorn>=21.0
 pandas>=2.2
 numpy>=1.26
 lxml>=5.0
-beautifulsoup4>=4.12
+beautifulsoup4>=4.15.0
