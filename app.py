@@ -24,7 +24,6 @@ import http.client
 import json
 import os
 import queue
-import random
 import re
 import secrets
 import shutil
@@ -90,8 +89,8 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 80           # اتصالات طازجة + تناوب query1/query2 يسمح بتوازٍ أعلى
-YF_REQUEST_TIMEOUT = 6    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
+YF_WORKERS = 64           # النقطة المثبتة: 64 عاملاً أعطت 67/67 في 5.2 ثانية
+YF_REQUEST_TIMEOUT = 5    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
 
@@ -544,46 +543,45 @@ def _write_cache(ticker, interval, df):
         pass
 
 
-_YF_USER_AGENTS = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+_YF_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
 
 def _yahoo_json(host, path):
-    ua = random.choice(_YF_USER_AGENTS)
     last_error = None
-    for retry in range(3):
+    for retry in range(2):
         conn = http.client.HTTPSConnection(host, timeout=YF_REQUEST_TIMEOUT)
         try:
             conn.request("GET", path, headers={
-                "User-Agent": ua,
+                "User-Agent": _YF_USER_AGENT,
                 "Accept": "application/json",
                 "Accept-Encoding": "gzip",
                 "Connection": "close",
             })
             response = conn.getresponse()
             body = response.read()
-            if response.status == 429 or response.status >= 500:
-                last_error = RuntimeError(f"Yahoo HTTP {response.status}")
-                time.sleep(0.6 * (retry + 1))
-                continue
             if response.status != 200:
                 raise RuntimeError(f"Yahoo HTTP {response.status}")
             if response.getheader("Content-Encoding") == "gzip":
                 body = gzip.decompress(body)
             return json.loads(body.decode("utf-8"))
-        except (OSError, http.client.HTTPException, ValueError) as e:
+        except OSError as e:
             last_error = e
-            time.sleep(0.4 * (retry + 1))
+            time.sleep(0.3 * (retry + 1))
+        except (http.client.HTTPException, ValueError) as e:
+            raise RuntimeError(f"Yahoo {host} فشل: {e}") from e
         finally:
             try:
                 conn.close()
             except OSError:
                 pass
     raise last_error or RuntimeError("تعذر الاتصال بـ Yahoo")
+
+
+class FetchError(Exception):
+    pass
 
 
 def _download_one(ticker, lookback, base_interval):
@@ -595,9 +593,10 @@ def _download_one(ticker, lookback, base_interval):
         "events": "div,splits",
     })
     last_error = None
-    hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+    hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com",
+             "query3.finance.yahoo.com")
     if sum(map(ord, str(ticker))) % 2:
-        hosts = tuple(reversed(hosts))
+        hosts = (hosts[1], hosts[2], hosts[0])
     for attempt, host in enumerate(hosts):
         path = f"/v8/finance/chart/{symbol}?{query}"
         try:
@@ -627,9 +626,8 @@ def _download_one(ticker, lookback, base_interval):
         except Exception as e:
             last_error = e
             if attempt == 0:
-                time.sleep(0.25)
-    print(f"فشل جلب {ticker}: {last_error}")
-    return None
+                time.sleep(0.2)
+    raise FetchError(f"فشل جلب {ticker}: {last_error}")
 
 
 def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_WORKERS,
@@ -639,6 +637,7 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
     lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
     def _fetch_one(ticker):
+        retryable = False
         try:
             cached = _read_cache(ticker, base_interval)
             if cached is not None:
@@ -647,24 +646,27 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
                 except Exception:
                     df = None
                 if df is not None:
-                    return ticker, df, (analyze(ticker, df) if analyze else None)
+                    return ticker, df, (analyze(ticker, df) if analyze else None), False
             raw = _download_one(ticker, lookback, base_interval)
             if raw is None:
-                return ticker, None, (analyze(ticker, None) if analyze else None)
+                return ticker, None, (analyze(ticker, None) if analyze else None), False
             _write_cache(ticker, base_interval, raw)
             try:
                 df = _extract_ticker(raw, ticker, rule, tail)
             except Exception as e:
                 print(f"فشل تجهيز بيانات {ticker}: {e}")
                 df = None
-            return ticker, df, (analyze(ticker, df) if analyze else None)
+            return ticker, df, (analyze(ticker, df) if analyze else None), False
+        except FetchError:
+            return ticker, None, None, True
         except Exception as e:
             print(f"فشل جلب {ticker}: {e}")
-            return ticker, None, (analyze(ticker, None) if analyze else None)
+            return ticker, None, (analyze(ticker, None) if analyze else None), False
 
     tickers = list(tickers)
     pending = iter(tickers)
     workers = min(workers, max(1, len(tickers)))
+    deferred = []
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {}
         for _ in range(workers):
@@ -679,12 +681,15 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
             for fut in done:
                 ticker = futs.pop(fut)
                 try:
-                    ticker, df, result = fut.result()
+                    ticker, df, result, retryable = fut.result()
                 except Exception as e:
                     print(f"فشل جلب {ticker}: {e}")
-                    ticker, df, result = (ticker, None,
-                                          (analyze(ticker, None) if analyze else None))
-                yield ticker, df, result
+                    ticker, df, result, retryable = (ticker, None, None, True)
+                if retryable:
+                    deferred.append(ticker)
+                    yield ticker, None, (analyze(ticker, None) if analyze else None)
+                else:
+                    yield ticker, df, result
 
                 if stop_event is not None and stop_event.is_set():
                     continue
@@ -698,6 +703,25 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
                 for fut in futs:
                     fut.cancel()
                 break
+
+    if deferred and not (stop_event is not None and stop_event.is_set()):
+        print(f"إعادة محاولة {len(deferred)} سهماً فاشلاً...")
+        retry_workers = min(32, max(1, len(deferred)))
+        for i in range(0, len(deferred), retry_workers):
+            if stop_event is not None and stop_event.is_set():
+                break
+            batch = deferred[i:i + retry_workers]
+            with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+                futs = {ex.submit(_fetch_one, t): t for t in batch}
+                for fut in as_completed(futs):
+                    ticker = futs[fut]
+                    try:
+                        ticker, df, result, _ = fut.result()
+                    except Exception as e:
+                        print(f"فشل جلب {ticker}: {e}")
+                        df, result = None, None
+                    yield ticker, df, result
+            time.sleep(0.7)
 
 
 def fetch_batch(tickers, timeframe, tail=None, pool=None):
@@ -955,7 +979,7 @@ def run_scan(override=None, claimed=False):
                 nb, ns, err = result
             with _state_lock:
                 _state["current"] = ticker
-                _state["done"] += 1
+                _state["done"] = min(_state["done"] + 1, _state["total"])
                 _state["bullish"] += nb
                 _state["bearish"] += ns
                 if err:
