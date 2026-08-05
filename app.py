@@ -27,7 +27,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, TimeoutError as _FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 
 import pandas as pd
@@ -75,7 +75,8 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-BATCH_SIZE = 150          # عدد الأسهم في كل طلب جلب جماعي
+YF_WORKERS = 24           # أكثر من ذلك يسبب تقييد Yahoo بدلاً من التسريع
+YF_REQUEST_TIMEOUT = 12   # مهلة كل سهم حتى لا يعلق الفحص كله
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
 
@@ -395,62 +396,91 @@ def _write_cache(ticker, interval, df):
         pass
 
 
-def _download_batch(grp, lookback, base_interval):
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(yf.download, grp, period=lookback, interval=base_interval,
-                        group_by="ticker", progress=False, threads=True,
-                        auto_adjust=False)
-        try:
-            return fut.result(timeout=120)
-        except _FutureTimeoutError:
-            print(f"انتهت مهلة جلب الدفعة {grp[0]}..{grp[-1]}")
-            return None
+def _download_one(ticker, lookback, base_interval):
+    try:
+        raw = yf.Ticker(ticker).history(
+            period=lookback,
+            interval=base_interval,
+            auto_adjust=False,
+            actions=False,
+            prepost=False,
+            timeout=YF_REQUEST_TIMEOUT,
+        )
+        return raw if raw is not None and not raw.empty else None
+    except Exception as e:
+        print(f"فشل جلب {ticker}: {e}")
+        return None
 
 
-def fetch_batch(tickers, timeframe, tail=None, pool=None):
+def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_WORKERS):
     base_interval, rule = timeframe, None
     if timeframe in CUSTOM_TIMEFRAMES:
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
     lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
-    results = {}
     needed = []
     for t in tickers:
+        if stop_event is not None and stop_event.is_set():
+            return
         cached = _read_cache(t, base_interval)
         if cached is not None:
             df = _extract_ticker(cached, t, rule, tail)
             if df is not None:
-                results[t] = df
+                yield t, df
                 continue
         needed.append(t)
-    batches = [needed[i:i + BATCH_SIZE] for i in range(0, len(needed), BATCH_SIZE)]
 
-    def _fetch_one(grp):
+    def _fetch_one(ticker):
+        raw = _download_one(ticker, lookback, base_interval)
+        if raw is None:
+            return None
+        _write_cache(ticker, base_interval, raw)
         try:
-            raw = _download_batch(grp, lookback, base_interval)
+            return _extract_ticker(raw, ticker, rule, tail)
         except Exception as e:
-            print(f"فشل جلب دفعة {grp[0]}..: {e}")
+            print(f"فشل تجهيز بيانات {ticker}: {e}")
             return None
-        if raw is None or raw.empty:
-            return None
-        out = {}
-        for t in grp:
-            try:
-                single = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
-                df = _extract_ticker(raw, t, rule, tail)
-                if df is not None:
-                    out[t] = df
-                    _write_cache(t, base_interval, single)
-            except Exception:
-                continue
-        return out
 
-    pool = min(pool or 6, max(1, len(batches)))
-    with ThreadPoolExecutor(max_workers=pool) as ex:
-        for _i, out in enumerate(ex.map(_fetch_one, batches), 1):
-            if out:
-                results.update(out)
-            with _state_lock:
-                _state["phase"] = f"جلب البيانات ({_i}/{len(batches)} دفعة)"
+    pending = iter(needed)
+    workers = min(workers, max(1, len(needed)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {}
+        for _ in range(workers):
+            try:
+                ticker = next(pending)
+            except StopIteration:
+                break
+            futs[ex.submit(_fetch_one, ticker)] = ticker
+
+        while futs:
+            done, _ = wait(futs, return_when=FIRST_COMPLETED)
+            for fut in done:
+                ticker = futs.pop(fut)
+                try:
+                    yield ticker, fut.result()
+                except Exception as e:
+                    print(f"فشل جلب {ticker}: {e}")
+                    yield ticker, None
+
+                if stop_event is not None and stop_event.is_set():
+                    continue
+                try:
+                    next_ticker = next(pending)
+                except StopIteration:
+                    continue
+                futs[ex.submit(_fetch_one, next_ticker)] = next_ticker
+
+            if stop_event is not None and stop_event.is_set():
+                for fut in futs:
+                    fut.cancel()
+                break
+
+
+def fetch_batch(tickers, timeframe, tail=None, pool=None):
+    results = {}
+    workers = YF_WORKERS if pool is None else max(1, int(pool))
+    for ticker, df in _iter_histories(tickers, timeframe, tail=tail, workers=workers):
+        if df is not None:
+            results[ticker] = df
     return results
 
 
@@ -565,9 +595,7 @@ def run_scan(override=None):
 
     try:
         items = list(universe)
-        groups = [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
-        if not groups:
-            groups = [items]
+        ticker_meta = {ticker: meta for ticker, meta in items}
 
         with _state_lock:
             _state["phase"] = "جلب البيانات وتحليلها"
@@ -636,46 +664,21 @@ def run_scan(override=None):
                 print(f"  خطأ أثناء فحص {t}: {e}")
                 return 0, 0, True
 
-        def _process_group(group):
+        tickers = [ticker for ticker, _ in items]
+        for ticker, df in _iter_histories(
+                tickers, cfg["timeframe"], tail=400,
+                stop_event=_stop_event, workers=YF_WORKERS):
             if _stop_event.is_set():
-                return 0, 0, 0, 0
-            grp_tickers = [t for t, _ in group]
-            data = fetch_batch(grp_tickers, cfg["timeframe"], tail=400, pool=1)
-            gbull = gbear = gerr = cnt = 0
-            for t, meta in group:
-                if _stop_event.is_set():
-                    break
-                nb, ns, err = _analyze_one(t, meta, data.get(t))
-                cnt += 1
-                gbull += nb
-                gbear += ns
+                break
+            nb, ns, err = _analyze_one(ticker, ticker_meta[ticker], df)
+            with _state_lock:
+                _state["current"] = ticker
+                _state["done"] += 1
+                _state["bullish"] += nb
+                _state["bearish"] += ns
                 if err:
-                    gerr += 1
-                with _state_lock:
-                    _state["current"] = t
-            return cnt, gbull, gbear, gerr
-
-        workers = min(6, max(1, len(groups)))
-        queue = list(groups)
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            futs = {}
-            for _ in range(workers):
-                if queue:
-                    futs[ex.submit(_process_group, queue.pop(0))] = True
-            while futs:
-                done, _ = wait(futs, return_when=FIRST_COMPLETED)
-                for fut in done:
-                    del futs[fut]
-                    if not _stop_event.is_set():
-                        cnt, nb, ns, err = fut.result()
-                        with _state_lock:
-                            _state["done"] += cnt
-                            _state["bullish"] += nb
-                            _state["bearish"] += ns
-                            _state["errors"] += err
-                            _state["phase"] = f"تحليل {_state['done']}/{_state['total']}"
-                if queue and not _stop_event.is_set():
-                    futs[ex.submit(_process_group, queue.pop(0))] = True
+                    _state["errors"] += 1
+                _state["phase"] = f"جلب وتحليل {_state['done']}/{_state['total']}"
     except Exception:
         import traceback
         traceback.print_exc()
@@ -707,6 +710,7 @@ def scheduler_loop():
                 last_dt = datetime.fromisoformat(last)
                 overdue = (datetime.now() - last_dt).total_seconds() >= interval * 60
             if overdue:
+                _stop_event.clear()
                 threading.Thread(target=run_scan, daemon=True).start()
         except Exception as e:
             print("خطأ في الجدولة:", e)
@@ -763,7 +767,7 @@ def logout():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "engine": "stream-v2", "workers": YF_WORKERS})
 
 
 @app.route("/api/login", methods=["POST"])

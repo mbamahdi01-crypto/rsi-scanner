@@ -77,7 +77,8 @@ python app.py
 |---|---|
 | `RSI_PERIOD` / `PIVOT_LEFT` / `PIVOT_RIGHT` / `TOLERANCE` | معايير حساب RSI ونقاط القمم/القيعان التأرجحية |
 | `TIMEFRAME_MAP` | خريطة فريم التنفيذ ← فريم منطقة الطلب/العرض |
-| `BATCH_SIZE` | عدد الأسهم في كل طلب جلب جماعي |
+| `YF_WORKERS` | عدد أسهم Yahoo التي تُجلب بالتوازي (24 افتراضياً) |
+| `YF_REQUEST_TIMEOUT` | مهلة جلب السهم الواحد حتى لا يعلق الفحص |
 | `RUSSELL_STRONG_COUNT` (في markets.py) | عدد "أقوى أسهم راسل" المضمّنة |
 
 ## تنبيه
