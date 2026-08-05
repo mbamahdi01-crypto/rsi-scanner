@@ -197,7 +197,7 @@ def _check_password(pw):
 
 def _ensure_initial_password():
     if not _has_password():
-        initial = secrets.token_urlsafe(9)
+        initial = os.environ.get("INITIAL_PASSWORD") or secrets.token_urlsafe(9)
         _set_password(initial)
         print("=" * 56)
         print("   كلمة المرور الابتدائية للتطبيق:", initial)
