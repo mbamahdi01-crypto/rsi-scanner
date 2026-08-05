@@ -131,10 +131,12 @@ def match_pivots(price_pivots, rsi_pivots, tolerance: int = 3):
 
 
 def _find_last_divergence(df: pd.DataFrame, direction: str, rsi_period: int = 14,
-                           pivot_left: int = 3, pivot_right: int = 3, tolerance: int = 3):
+                           pivot_left: int = 3, pivot_right: int = 3, tolerance: int = 3,
+                           rsi: pd.Series = None):
     """
     منطق مشترك لإيجاد آخر انفراج (إيجابي أو سلبي).
     direction: 'bullish' (طلب) أو 'bearish' (عرض)
+    rsi: سلسلة RSI محسوبة مسبقاً لتجنب إعادة الحساب (اختياري).
 
     الفكرة: القاع/القمة الحالي يُؤخذ من آخر pivot_right شموع مباشرة (بدون انتظار
     تأكيد القمم التأرجحية)، ويُقارن بآخر قاع/قمة تأرجحية مؤكّدة قبله. مستوى الاختراق
@@ -149,7 +151,8 @@ def _find_last_divergence(df: pd.DataFrame, direction: str, rsi_period: int = 14
 
     close = df["Close"]
     price_series = df[price_col]
-    rsi = calculate_rsi(close, rsi_period)
+    if rsi is None:
+        rsi = calculate_rsi(close, rsi_period)
 
     mode = "low" if direction == "bullish" else "high"
     price_pivots = find_pivots(price_series, pivot_left, pivot_right, mode=mode)
@@ -197,7 +200,7 @@ def _find_last_divergence(df: pd.DataFrame, direction: str, rsi_period: int = 14
 def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
                    pivot_right: int = 3, tolerance: int = 3, rsi_max: float = None,
                    fresh_window: int = None, min_volume_ratio: float = None,
-                   trend_filter: bool = False, trend_period: int = 200):
+                   trend_filter: bool = False, trend_period: int = 200, rsi: pd.Series = None):
     """
     انفراج إيجابي + اختراق الرقبة (أعلى قيمتي RSI عند القاعين) = تنبيه شراء.
     - يُلتقط التنبيه في شمعة الاختراق نفسها (وليس بعد شموع لاحقة).
@@ -205,9 +208,11 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
       (تشبع بيعي / ليس فوق خط الوسط).
     - min_volume_ratio: يُشترط أن يكون حجم شمعة الاختراق >= النسبة × متوسط آخر 20 شمعة.
     - trend_filter: يُشترط أن يكون السعر فوق المتوسط المتحرك (اتجاه صاعد).
+    - rsi: سلسلة RSI محسوبة مسبقاً (اختياري) لتجنب إعادة الحساب.
     يرجع dict أو None.
     """
-    info = _find_last_divergence(df, "bullish", rsi_period, pivot_left, pivot_right, tolerance)
+    info = _find_last_divergence(df, "bullish", rsi_period, pivot_left, pivot_right,
+                                 tolerance, rsi=rsi)
     if info is None:
         return None
 
@@ -263,16 +268,19 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
 def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
                            pivot_right: int = 3, tolerance: int = 3, rsi_min: float = None,
                            fresh_window: int = None, min_volume_ratio: float = None,
-                           trend_filter: bool = False, trend_period: int = 200):
+                           trend_filter: bool = False, trend_period: int = 200,
+                           rsi: pd.Series = None):
     """
     انفراج سلبي + كسر الرقبة (أدنى قيمتي RSI عند القمتين) = تنبيه بيع.
     يُلتقط التنبيه في شمعة الكسر نفسها.
     إذا أُعطي rsi_min: يُشترط أن يكون RSI عند الكسر وعند القمة الحالية >= rsi_min.
     - min_volume_ratio: يُشترط أن يكون حجم شمعة الكسر >= النسبة × متوسط آخر 20 شمعة.
     - trend_filter: يُشترط أن يكون السعر تحت المتوسط المتحرك (اتجاه هابط).
+    - rsi: سلسلة RSI محسوبة مسبقاً (اختياري) لتجنب إعادة الحساب.
     يرجع dict أو None.
     """
-    info = _find_last_divergence(df, "bearish", rsi_period, pivot_left, pivot_right, tolerance)
+    info = _find_last_divergence(df, "bearish", rsi_period, pivot_left, pivot_right,
+                                 tolerance, rsi=rsi)
     if info is None:
         return None
 
@@ -326,14 +334,17 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
 
 
 def get_divergence_zone(df: pd.DataFrame, direction: str, rsi_period: int = 14,
-                         pivot_left: int = 3, pivot_right: int = 3, tolerance: int = 3):
+                         pivot_left: int = 3, pivot_right: int = 3, tolerance: int = 3,
+                         rsi: pd.Series = None):
     """
     يستخرج 'منطقة الطلب/العرض' من فريم أعلى: نطاق الشمعة (Low..High) عند آخر
     قاع/قمة تأرجحية شكّلت الانفراج، بغض النظر عن حدوث الاختراق فعلياً في هذا الفريم.
     direction: 'bullish' (منطقة طلب) أو 'bearish' (منطقة عرض)
+    rsi: سلسلة RSI محسوبة مسبقاً (اختياري) لتجنب إعادة الحساب.
     يرجع dict {zone_low, zone_high, zone_date} أو None.
     """
-    info = _find_last_divergence(df, direction, rsi_period, pivot_left, pivot_right, tolerance)
+    info = _find_last_divergence(df, direction, rsi_period, pivot_left, pivot_right,
+                                 tolerance, rsi=rsi)
     if info is None:
         return None
 

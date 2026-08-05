@@ -16,12 +16,15 @@ app.py
     ثم افتح المتصفح على: http://localhost:5000
 """
 
+import gzip
 import hashlib
 import hmac
 import html
 import http.client
 import json
 import os
+import queue
+import random
 import re
 import secrets
 import shutil
@@ -30,7 +33,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, as_completed
 from datetime import datetime
 
 import pandas as pd
@@ -39,8 +42,8 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 from markets import (SAUDI_INDICES, US_INDICES, US_SECTOR_AR, SAUDI_SECTOR_AR,
                      build_universe, market_sectors, refresh_lists,
                      start_background_refresh)
-from scanner import (backtest_signals, detect_signal, detect_signal_bearish,
-                     get_divergence_zone)
+from scanner import (backtest_signals, calculate_rsi, detect_signal,
+                     detect_signal_bearish, get_divergence_zone)
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -87,7 +90,7 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 96           # طلبات متزامنة مع اتصالات HTTP معاد استخدامها
+YF_WORKERS = 64           # توازن: 96 تسبب تقييداً من Yahoo عند IP واحد
 YF_REQUEST_TIMEOUT = 8    # مهلة كل سهم حتى لا يعلق الفحص كله
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
@@ -379,6 +382,36 @@ def save_alert(market, sector, ticker, name, direction, timeframe, signal_date,
     return inserted
 
 
+_ALERT_INSERT_SQL = """INSERT OR IGNORE INTO alerts
+   (market, sector, ticker, name, direction, timeframe, signal_date,
+    price, rsi_value, peak_level, rsi_low, zone_timeframe, zone_low, zone_high,
+     stop_loss, target_1, target_2, volume_ratio, volume, created_at)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+
+
+def save_alerts_batch(rows):
+    """يدرج دفعة تنبيهات في اتصال واحد. يعيد قائمة منطقية لكل صف: هل أُدخل فعلاً؟"""
+    if not rows:
+        return []
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    inserted_flags = []
+    try:
+        conn.execute("BEGIN")
+        for row in rows:
+            cur = conn.execute(_ALERT_INSERT_SQL, row)
+            inserted_flags.append(cur.rowcount > 0)
+        conn.commit()
+    except sqlite3.Error as e:
+        print("فشل إدراج دفعة التنبيهات:", e)
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+    finally:
+        conn.close()
+    return inserted_flags
+
+
 def _scan_cache_key(cfg, universe):
     tickers = "\n".join(ticker for ticker, _ in universe)
     universe_hash = hashlib.sha256(tickers.encode("utf-8")).hexdigest()[:16]
@@ -458,6 +491,35 @@ def _cache_path(ticker, interval):
     return os.path.join(d, safe + ".csv")
 
 
+_cache_write_queue = queue.Queue(maxsize=2000)
+
+
+def _write_cache_worker():
+    """خيط واحد يكتب ملفات الكاش لتجنب تزاحم أقراص Render عند كتابة آلاف الملفات."""
+    while True:
+        item = _cache_write_queue.get()
+        if item is None:
+            break
+        try:
+            ticker, interval, df = item
+            if df is None or df.empty:
+                continue
+            out = df.copy()
+            if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
+                out.index = out.index.tz_convert("UTC").tz_localize(None)
+            path = _cache_path(ticker, interval)
+            tmp = f"{path}.w.tmp"
+            out.reset_index().to_csv(tmp, index=False)
+            os.replace(tmp, path)
+        except Exception:
+            pass
+
+
+def _start_cache_writer():
+    t = threading.Thread(target=_write_cache_worker, name="cache-writer", daemon=True)
+    t.start()
+
+
 def _read_cache(ticker, interval):
     try:
         p = _cache_path(ticker, interval)
@@ -477,20 +539,19 @@ def _read_cache(ticker, interval):
 
 def _write_cache(ticker, interval, df):
     try:
-        if df is None or df.empty:
-            return
-        out = df.copy()
-        if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
-            out.index = out.index.tz_convert("UTC").tz_localize(None)
-        path = _cache_path(ticker, interval)
-        tmp = f"{path}.{threading.get_ident()}.tmp"
-        out.reset_index().to_csv(tmp, index=False)
-        os.replace(tmp, path)
-    except Exception:
+        _cache_write_queue.put_nowait((ticker, interval, df))
+    except queue.Full:
         pass
 
 
 _http_local = threading.local()
+
+_YF_USER_AGENTS = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+)
 
 
 def _yahoo_json(host, path):
@@ -498,29 +559,41 @@ def _yahoo_json(host, path):
     if connections is None:
         connections = {}
         _http_local.connections = connections
-    for retry in range(2):
+    ua = random.choice(_YF_USER_AGENTS)
+    for retry in range(3):
         conn = connections.get(host)
         if conn is None:
             conn = http.client.HTTPSConnection(host, timeout=YF_REQUEST_TIMEOUT)
             connections[host] = conn
         try:
             conn.request("GET", path, headers={
-                "User-Agent": "Mozilla/5.0 (compatible; RSI-Scanner/2.0)",
+                "User-Agent": ua,
                 "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Connection": "keep-alive",
             })
             response = conn.getresponse()
             body = response.read()
+            if response.status == 429 or response.status >= 500:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                connections.pop(host, None)
+                time.sleep(0.5 * (retry + 1))
+                continue
             if response.status != 200:
                 raise RuntimeError(f"Yahoo HTTP {response.status}")
+            if response.getheader("Content-Encoding") == "gzip":
+                body = gzip.decompress(body)
             return json.loads(body.decode("utf-8"))
-        except (OSError, http.client.HTTPException, RuntimeError, ValueError):
+        except (OSError, http.client.HTTPException, ValueError):
             try:
                 conn.close()
             except OSError:
                 pass
             connections.pop(host, None)
-            if retry:
-                raise
+            time.sleep(0.4 * (retry + 1))
     raise RuntimeError("تعذر الاتصال بـ Yahoo")
 
 
@@ -570,27 +643,35 @@ def _download_one(ticker, lookback, base_interval):
     return None
 
 
-def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_WORKERS):
+def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_WORKERS,
+                    analyze=None):
     base_interval, rule = timeframe, None
     if timeframe in CUSTOM_TIMEFRAMES:
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
     lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
     def _fetch_one(ticker):
-        cached = _read_cache(ticker, base_interval)
-        if cached is not None:
-            try:
-                return _extract_ticker(cached, ticker, rule, tail)
-            except Exception:
-                pass
-        raw = _download_one(ticker, lookback, base_interval)
-        if raw is None:
-            return None
-        _write_cache(ticker, base_interval, raw)
         try:
-            return _extract_ticker(raw, ticker, rule, tail)
+            cached = _read_cache(ticker, base_interval)
+            if cached is not None:
+                try:
+                    df = _extract_ticker(cached, ticker, rule, tail)
+                except Exception:
+                    df = None
+                if df is not None:
+                    return ticker, df, (analyze(ticker, df) if analyze else None)
+            raw = _download_one(ticker, lookback, base_interval)
+            if raw is None:
+                return ticker, None, (analyze(ticker, None) if analyze else None)
+            _write_cache(ticker, base_interval, raw)
+            try:
+                df = _extract_ticker(raw, ticker, rule, tail)
+            except Exception as e:
+                print(f"فشل تجهيز بيانات {ticker}: {e}")
+                df = None
+            return ticker, df, (analyze(ticker, df) if analyze else None)
         except Exception as e:
-            print(f"فشل تجهيز بيانات {ticker}: {e}")
-            return None
+            print(f"فشل جلب {ticker}: {e}")
+            return ticker, None, (analyze(ticker, None) if analyze else None)
 
     tickers = list(tickers)
     pending = iter(tickers)
@@ -609,10 +690,12 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
             for fut in done:
                 ticker = futs.pop(fut)
                 try:
-                    yield ticker, fut.result()
+                    ticker, df, result = fut.result()
                 except Exception as e:
                     print(f"فشل جلب {ticker}: {e}")
-                    yield ticker, None
+                    ticker, df, result = (ticker, None,
+                                          (analyze(ticker, None) if analyze else None))
+                yield ticker, df, result
 
                 if stop_event is not None and stop_event.is_set():
                     continue
@@ -631,7 +714,7 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
 def fetch_batch(tickers, timeframe, tail=None, pool=None):
     results = {}
     workers = YF_WORKERS if pool is None else max(1, int(pool))
-    for ticker, df in _iter_histories(tickers, timeframe, tail=tail, workers=workers):
+    for ticker, df, _ in _iter_histories(tickers, timeframe, tail=tail, workers=workers):
         if df is not None:
             results[ticker] = df
     return results
@@ -808,28 +891,30 @@ def run_scan(override=None, claimed=False):
         with _state_lock:
             _state["phase"] = "جلب البيانات وتحليلها"
 
+        alert_rows = []
+        alert_meta = []
+        alerts_lock = threading.Lock()
+
         def _analyze_one(t, meta, df):
             if df is None or len(df) < min_bars:
                 return 0, 0, True
             try:
                 bulls = bears = 0
-                zone_cache = {}
+                rsi_series = calculate_rsi(df["Close"], RSI_PERIOD)
                 bullish = detect_signal(df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE,
                                         rsi_max=rsi_max,
                                         min_volume_ratio=1.5 if vol_on else None,
-                                        trend_filter=trend_on)
+                                        trend_filter=trend_on, rsi=rsi_series)
                 bearish = detect_signal_bearish(df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE,
                                                 min_volume_ratio=1.5 if vol_on else None,
-                                                trend_filter=trend_on)
+                                                trend_filter=trend_on, rsi=rsi_series)
                 for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
                     if not result or not result.get("fresh_breakout"):
                         continue
-                    if t not in zone_cache:
-                        if zone_tf == cfg["timeframe"]:
-                            zone_cache[t] = df
-                        else:
-                            zone_cache[t] = fetch_batch([t], zone_tf, tail=250, pool=1).get(t)
-                    zdf = zone_cache[t]
+                    if zone_tf == cfg["timeframe"]:
+                        zdf = df
+                    else:
+                        zdf = fetch_batch([t], zone_tf, tail=250, pool=1).get(t)
                     zone = None
                     if zdf is not None and len(zdf) >= min_bars:
                         zone = get_divergence_zone(zdf, direction, RSI_PERIOD,
@@ -838,22 +923,18 @@ def run_scan(override=None, claimed=False):
                     zone_high = zone["zone_high"] if zone else None
                     stop, t1, t2 = compute_stops(direction, result["price"],
                                                  result.get("atr"), zone_low, zone_high)
-                    inserted = save_alert(
+                    row = (
                         cfg["market"], meta.get("sector", cfg["sector"]), t, meta.get("name", ""),
-                        direction, cfg["timeframe"], result["signal_date"],
+                        direction, cfg["timeframe"], _canonical_date(result["signal_date"]),
                         result["price"], result["rsi_value"], result["peak_level"],
-                        rsi_low=result.get("rsi_low"),
-                        zone_tf=zone_tf,
-                        zone_low=zone_low,
-                        zone_high=zone_high,
-                        stop_loss=stop,
-                        target_1=t1,
-                        target_2=t2,
-                        volume_ratio=result.get("volume_ratio"),
-                        volume=result.get("volume"),
+                        result.get("rsi_low"), zone_tf, zone_low, zone_high,
+                        stop, t1, t2,
+                        result.get("volume_ratio"), result.get("volume"),
+                        datetime.now().isoformat(),
                     )
-                    if inserted:
-                        a = {
+                    with alerts_lock:
+                        alert_rows.append(row)
+                        alert_meta.append({
                             "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
                             "ticker": t, "name": meta.get("name", ""), "direction": direction,
                             "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
@@ -862,9 +943,7 @@ def run_scan(override=None, claimed=False):
                             "volume": result.get("volume"),
                             "zone_low": zone_low, "zone_high": zone_high,
                             "stop_loss": stop, "target_1": t1, "target_2": t2,
-                        }
-                        threading.Thread(target=telegram_send,
-                                         args=(telegram_alert_message(a),), daemon=True).start()
+                        })
                     if direction == "bullish":
                         bulls += 1
                     else:
@@ -875,12 +954,16 @@ def run_scan(override=None, claimed=False):
                 return 0, 0, True
 
         tickers = [ticker for ticker, _ in items]
-        for ticker, df in _iter_histories(
+        for ticker, df, result in _iter_histories(
                 tickers, cfg["timeframe"], tail=400,
-                stop_event=_stop_event, workers=YF_WORKERS):
+                stop_event=_stop_event, workers=YF_WORKERS,
+                analyze=lambda t, d: _analyze_one(t, ticker_meta[t], d)):
             if _stop_event.is_set():
                 break
-            nb, ns, err = _analyze_one(ticker, ticker_meta[ticker], df)
+            if result is None:
+                nb, ns, err = 0, 0, True
+            else:
+                nb, ns, err = result
             with _state_lock:
                 _state["current"] = ticker
                 _state["done"] += 1
@@ -889,6 +972,14 @@ def run_scan(override=None, claimed=False):
                 if err:
                     _state["errors"] += 1
                 _state["phase"] = f"جلب وتحليل {_state['done']}/{_state['total']}"
+        if alert_rows:
+            inserted_flags = save_alerts_batch(alert_rows)
+            new_count = sum(1 for f in inserted_flags if f)
+            for i, meta in enumerate(alert_meta):
+                if inserted_flags[i]:
+                    threading.Thread(target=telegram_send,
+                                     args=(telegram_alert_message(meta),), daemon=True).start()
+            print(f"إدراج {new_count} إشارة جديدة من {len(alert_rows)}")
     except Exception:
         import traceback
         traceback.print_exc()
@@ -1262,6 +1353,7 @@ def start_services():
     _services_started = True
     init_db()
     _ensure_initial_password()
+    _start_cache_writer()
     start_background_refresh()
     threading.Thread(target=scheduler_loop, daemon=True).start()
     threading.Thread(target=keepalive_loop, daemon=True).start()
