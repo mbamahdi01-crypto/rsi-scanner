@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>دليل الموقع | فلتر انفراج RSI</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #0f1115; color: #e8e8e8; margin: 0; padding: 24px; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  h1 { color: #4fd1c5; font-size: 24px; margin-bottom: 4px; }
+  p.sub { color: #8a8f98; margin-top: 0; font-size: 13px; }
+  .section { background: #161920; border: 1px solid #24272f; border-radius: 12px; padding: 18px; margin-top: 16px; }
+  .section h2 { color: #4fd1c5; font-size: 17px; margin: 0 0 12px; border-bottom: 1px solid #24272f; padding-bottom: 8px; }
+  .item { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px dashed #24272f; }
+  .item:last-child { border-bottom: none; }
+  .item .label { min-width: 200px; font-weight: bold; color: #fff; }
+  .item .desc { color: #c2c6cc; font-size: 14px; line-height: 1.7; }
+  code { background: #1a1d24; border: 1px solid #2a2d34; border-radius: 6px; padding: 2px 8px; color: #f6c453; font-size: 13px; }
+  .btn { display: inline-block; background: #4fd1c5; color: #0f1115; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; text-decoration: none; margin-top: 18px; }
+  .btn:hover { background: #3bb8ac; }
+  .tag { padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; }
+  .tag.bullish { background: rgba(79,209,197,0.15); color: #4fd1c5; }
+  .tag.bearish { background: rgba(246,101,101,0.15); color: #f66565; }
+  .note { background: rgba(246,196,83,0.08); border: 1px solid rgba(246,196,83,0.3); border-radius: 8px; padding: 10px 14px; color: #f6c453; font-size: 13px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📖 دليل استخدام الموقع</h1>
+  <p class="sub">فلتر انفراج RSI + مناطق الطلب والعرض — شرح كل خيار وزر في الصفحة.</p>
+
+  <div class="section">
+    <h2>الإعدادات أعلى الصفحة</h2>
+    <div class="item"><div class="label">السوق</div><div class="desc">اختيار بين <b>السوق السعودي (تاسي)</b> و<b>السوق الأمريكي</b> (كل الأسهم المدرجة في ناسداك ونيويورك وAMEX).</div></div>
+    <div class="item"><div class="label">القطاع</div><div class="desc">تضييق الفحص على قطاع واحد. «كل القطاعات» يفحص كل السوق، و«المؤشرات» يفحص المؤشرات نفسها فقط (مثل تاسي وS&amp;P 500). العدد بجانب كل قطاع هو عدد الأسهم فيه.</div></div>
+    <div class="item"><div class="label">فريم التنفيذ</div><div class="desc">الشمعة التي يُكتشف عليها الانفراج: <b>15 دقيقة</b> أو <b>ساعة</b> أو <b>يومي</b> أو <b>أسبوعي</b> أو <b>شهري</b>. كل فريم أطول = إشارات أبطأ وأثبت.</div></div>
+    <div class="item"><div class="label">شرط RSI لتنبيه الشراء</div><div class="desc">منع تنبيهات الشراء إلا إذا كان مؤشر RSI منخفضاً. الخيارات: كل الحالات، أقل من 50 (تحت خط الوسط)، أقل من 40، أقل من 30 (تشبع بيعي)، أقل من 20 (تشبع قوي).</div></div>
+    <div class="item"><div class="label">دورة الفحص التلقائي (دقائق)</div><div class="desc">كل كم دقيقة يُعاد الفحص تلقائياً. أدنى حد 5 دقائق.</div></div>
+    <div class="item"><div class="label">فلتر الحجم (×1.5 المتوسط)</div><div class="desc">عند التفعيل: يُقبل فقط الاختراق الذي يكون حجم شمعته ≥ 1.5 ضعف متوسط آخر 20 شمعة (تأكيد قوة الاختراق).</div></div>
+    <div class="item"><div class="label">فلتر الاتجاه العام (SMA200)</div><div class="desc">عند التفعيل: الشراء فقط إذا كان السعر فوق المتوسط المتحرك 200، والبيع فقط إذا كان تحته.</div></div>
+  </div>
+
+  <div class="section">
+    <h2>تنبيهات تيليجرام</h2>
+    <div class="item"><div class="label">توكن البوت</div><div class="desc">أنشئ بوتاً من <code>@BotFather</code> في تيليجرام وانسخ التوكن <code>123456789:AAF...</code> هنا لإرسال التنبيهات.</div></div>
+    <div class="item"><div class="label">معرف الشات</div><div class="desc">أرسل رسالة للبوت ثم اعرف معرفك من <code>@userinfobot</code>. ضع <code>-100123456789</code> للمجموعات.</div></div>
+    <div class="item"><div class="label">إرسال رسالة تجريبية</div><div class="desc">يرسل رسالة اختبار للتأكد من أن البوت والمعرف مضبوطان.</div></div>
+  </div>
+
+  <div class="section">
+    <h2>أزرار التحكم</h2>
+    <div class="item"><div class="label">فحص الآن</div><div class="desc">يبدأ فحصاً فورياً لكل الأسهم في الاختيار الحالي. النتائج تظهر في الجدول أثناء الفحص ولا حاجة للانتظار حتى النهاية. إذا كان فحص جارٍ بالفعل ستظهر رسالة بذلك.</div></div>
+    <div class="item"><div class="label">تشغيل/إيقاف الفحص التلقائي</div><div class="desc">تفعيل أو إيقاف الدورات المتكررة حسب «دورة الفحص التلقائي». لونه أحمر عندما يكون مفعّلاً.</div></div>
+    <div class="item"><div class="label">تحديث قوائم الأسهم</div><div class="desc">يعيد جلب قوائم الأسهم والقطاعات من مصادرها (تاسي، S&amp;P 500، ناسداك، داو، Russell 3000، دليل NASDAQ) في الخلفية.</div></div>
+    <div class="item"><div class="label">مسح التنبيهات</div><div class="desc">حذف كل التنبيهات المحفوظة من الجدول (لا يمكن التراجع).</div></div>
+    <div class="item"><div class="label">تغيير كلمة المرور</div><div class="desc">فتح نافذة لتغيير كلمة مرور الدخول إلى الموقع.</div></div>
+    <div class="item"><div class="label">دليل الموقع</div><div class="desc">هذه الصفحة نفسها — شرح كل زر وخيار.</div></div>
+    <div class="item"><div class="label">خروج</div><div class="desc">تسجيل الخروج والعودة لشاشة كلمة المرور.</div></div>
+    <div class="item"><div class="label">تنبيهات الاختيار الحالي فقط</div><div class="desc">إذا كان محدداً: يعرض الجدول تنبيهات السوق/القطاع المختار حالياً فقط. إذا أُلغي: يعرض كل التنبيهات.</div></div>
+  </div>
+
+  <div class="section">
+    <h2>بطاقات الحالة وشريط التقدم</h2>
+    <div class="item"><div class="label">الحالة / عدد الأسهم / تم الفحص</div><div class="desc">تظهر ما إذا كان الفحص جارياً، عدد الأسهم المطلوب فحصها، وعدد المكتمل منها.</div></div>
+    <div class="item"><div class="label">تنبيهات طلب / عرض</div><div class="desc">عدد إشارات الشراء <span class="tag bullish">طلب / شراء</span> والبيع <span class="tag bearish">عرض / بيع</span> المكتشفة.</div></div>
+    <div class="item"><div class="label">شريط التقدم</div><div class="desc">نسبة اكتمال الدورة الحالية.</div></div>
+  </div>
+
+  <div class="section">
+    <h2>جدول التنبيهات</h2>
+    <div class="item"><div class="label">السهم / الاسم</div><div class="desc">رمز السهم (مثل <code>AAPL</code> أو <code>2222.SR</code>) واسمه.</div></div>
+    <div class="item"><div class="label">السوق / القطاع</div><div class="desc">السوق الذي ينتمي له السهم والقطاع المصنف فيه.</div></div>
+    <div class="item"><div class="label">النوع</div><div class="desc"><span class="tag bullish">طلب / شراء</span> انفراج إيجابي (قاع أدنى + RSI أعلى + اختراق الرقبة). <span class="tag bearish">عرض / بيع</span> انفراج سلبي (قمة أعلى + RSI أدنى + كسر الرقبة).</div></div>
+    <div class="item"><div class="label">شمعة الإشارة</div><div class="desc">تاريخ الشمعة التي حدث فيها الاختراق/الكسر.</div></div>
+    <div class="item"><div class="label">السعر / RSI عند الاختراق / قاع RSI / الرقبة</div><div class="desc">السعر ومستوى RSI لحظة الاختراق، أدنى قيمة RSI عند قاع الانفراج، ومستوى «الرقبة» (أعلى قيمتي RSI عند القاعين) الذي تم اختراقه.</div></div>
+    <div class="item"><div class="label">منطقة الطلب/العرض</div><div class="desc">نطاق سعري (من–إلى) من فريم أعلى للشمعة التي شكّلت الانفراج — يستخدم كمنطقة اهتمام قريبة من السعر.</div></div>
+    <div class="item"><div class="label">الحجم (×المتوسط)</div><div class="desc">حجم شمعة الاختراق مقسوماً على متوسط آخر 20 شمعة.</div></div>
+    <div class="item"><div class="label">وقف الخسارة / الهدف 1 / الهدف 2</div><div class="desc">مستويات مقترحة محسوبة من ATR ومنطقة الطلب/العرض.</div></div>
+  </div>
+
+  <div class="section">
+    <h2>باك-تست أداء الفلتر</h2>
+    <div class="item"><div class="label">رمز السهم / الفريم / تشغيل الباك-تست</div><div class="desc">اختر رمزاً (مثل <code>2222.SR</code> أو <code>AAPL</code>) وفريماً ثم شغّل. يعيد الفلتر على التاريخ الكامل ويحسب نسبة نجاح الإشارات بعد 5 و10 و20 شمعة، مع متوسط العائد وأفضل/أسوأ نتيجة.</div></div>
+    <div class="note">ملاحظة: أول فحص شامل للسوق الأمريكي قد يستغرق وقتاً بسبب حجم الأسهم (~6500) وحدود Yahoo المجانية، لكن الدورات التالية أسرع لأن البيانات تُخزَّن مؤقتاً على القرص. يمكنك أيضاً الفحص حسب قطاع محدد ليكون أسرع.</div>
+  </div>
+
+  <a class="btn" href="/" target="_self">← العودة إلى الفلتر</a>
+</div>
+</body>
+</html>

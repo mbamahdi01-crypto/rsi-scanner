@@ -20,12 +20,14 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
 from datetime import datetime
 
 import pandas as pd
@@ -44,14 +46,17 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
 DB_PATH = os.path.join(DATA_DIR, "alerts.db")
+YF_CACHE_DIR = os.path.join(DATA_DIR, "yf_cache")
 
 # ==================== الإعدادات ====================
-EXECUTION_TIMEFRAMES = ["15m", "1h", "1d"]
+EXECUTION_TIMEFRAMES = ["15m", "1h", "1d", "1wk", "1mo"]
 
 TIMEFRAME_MAP = {   # فريم التنفيذ ← فريم منطقة الطلب/العرض
     "15m": "2h",
     "1h": "1d",
     "1d": "1wk",
+    "1wk": "1mo",
+    "1mo": "1mo",
 }
 DEFAULT_ZONE_TIMEFRAME = "1d"
 
@@ -62,8 +67,8 @@ TOLERANCE = 3
 
 LOOKBACK_MAP = {
     "1m": "7d", "2m": "60d", "5m": "60d", "15m": "60d", "30m": "60d",
-    "60m": "730d", "1h": "730d", "90m": "60d",
-    "1d": "2y", "5d": "2y", "1wk": "5y", "1mo": "10y",
+    "60m": "180d", "1h": "180d", "90m": "60d",
+    "1d": "1y", "5d": "1y", "1wk": "5y", "1mo": "max",
 }
 DEFAULT_LOOKBACK = "1y"
 YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
@@ -85,13 +90,18 @@ DEFAULTS = {
     "interval_minutes": SCAN_INTERVAL_DEFAULT,
     "volume_filter": False,     # اشتراط حجم شمعة الاختراق >= 1.5 × متوسط آخر 20 شمعة
     "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
-    "price_min": None,          # الحد الأدنى لسعر السهم في التنبيه (اختياري)
-    "price_max": None,          # الحد الأقصى لسعر السهم في التنبيه (اختياري)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
 }
 
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
+
+
+def _valid_sector_ids(market):
+    try:
+        return {s["id"] for s in market_sectors(market)} | {"all", "indices"}
+    except Exception:
+        return {"all", "indices"}
 
 
 def _load_config():
@@ -102,8 +112,8 @@ def _load_config():
         if saved.get("market") in ("saudi", "us"):
             cfg["market"] = saved["market"]
         if isinstance(saved.get("sector"), str):
-            sectors = {s["id"] for s in market_sectors(cfg["market"])}
-            if saved["sector"] in sectors | {"all", "indices"}:
+            sectors = _valid_sector_ids(cfg["market"])
+            if saved["sector"] in sectors:
                 cfg["sector"] = saved["sector"]
         if saved.get("rsi_max") in (50, 40, 30, 20):
             cfg["rsi_max"] = saved["rsi_max"]
@@ -121,12 +131,6 @@ def _load_config():
             cfg["telegram_token"] = saved["telegram_token"]
         if isinstance(saved.get("telegram_chat"), str):
             cfg["telegram_chat"] = saved["telegram_chat"]
-        for key in ("price_min", "price_max"):
-            v = saved.get(key)
-            if isinstance(v, (int, float)) and v > 0:
-                cfg[key] = float(v)
-            else:
-                cfg[key] = None
         # فريم التنفيذ: يومي دائماً عند الإقلاع — المستخدم يغيّره وقت الحاجة فقط
         cfg["timeframe"] = DEFAULTS["timeframe"]
     except (OSError, ValueError):
@@ -299,7 +303,7 @@ def save_alert(market, sector, ticker, name, direction, timeframe, signal_date,
                price, rsi_value, peak_level, rsi_low=None,
                zone_tf=None, zone_low=None, zone_high=None,
                stop_loss=None, target_1=None, target_2=None, volume_ratio=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     cur = conn.execute(
         """INSERT OR IGNORE INTO alerts
            (market, sector, ticker, name, direction, timeframe, signal_date,
@@ -325,7 +329,7 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return df.resample(rule).agg(agg).dropna(how="any")
 
 
-def _extract_ticker(raw, ticker, rule):
+def _extract_ticker(raw, ticker, rule, tail=None):
     if isinstance(raw.columns, pd.MultiIndex):
         df = raw[ticker]
     else:
@@ -335,25 +339,89 @@ def _extract_ticker(raw, ticker, rule):
         return None
     if rule:
         df = resample_ohlc(df, rule)
+    if tail:
+        df = df.tail(tail)
     df = df.reset_index()
     date_col = "Datetime" if "Datetime" in df.columns else ("Date" if "Date" in df.columns else df.columns[0])
     return df.rename(columns={date_col: "Date"})
 
 
-def fetch_batch(tickers, timeframe):
+# ==================== كياش بيانات ياهو (يمنع إعادة التحميل كل دورة) ====================
+def _cache_ttl(interval):
+    """صلاحية الكياش بالثواني: اللحظي أقصر (15 د)، اليومي والأسبوعي أطول (4 ساعات)
+    حتى تتكرر دورات الفحص اليومي من الكياش بسرعة دون إعادة تحميل السوق كاملاً."""
+    return 900 if interval in ("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h") else 14400
+
+
+def _cache_path(ticker, interval):
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(ticker))
+    d = os.path.join(YF_CACHE_DIR, str(interval))
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, safe + ".csv")
+
+
+def _read_cache(ticker, interval):
+    try:
+        p = _cache_path(ticker, interval)
+        if not os.path.exists(p) or time.time() - os.path.getmtime(p) > _cache_ttl(interval):
+            return None
+        df = pd.read_csv(p)
+        if df.empty:
+            return None
+        c = "Date" if "Date" in df.columns else ("Datetime" if "Datetime" in df.columns else None)
+        if c is None:
+            return None
+        df[c] = pd.to_datetime(df[c])
+        return df.set_index(c)
+    except Exception:
+        return None
+
+
+def _write_cache(ticker, interval, df):
+    try:
+        if df is None or df.empty:
+            return
+        out = df.copy()
+        if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
+            out.index = out.index.tz_convert("UTC").tz_localize(None)
+        out.reset_index().to_csv(_cache_path(ticker, interval), index=False)
+    except Exception:
+        pass
+
+
+def _download_batch(grp, lookback, base_interval):
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(yf.download, grp, period=lookback, interval=base_interval,
+                        group_by="ticker", progress=False, threads=True,
+                        auto_adjust=False)
+        try:
+            return fut.result(timeout=60)
+        except _FutureTimeoutError:
+            print(f"انتهت مهلة جلب الدفعة {grp[0]}..{grp[-1]}")
+            return None
+
+
+def fetch_batch(tickers, timeframe, tail=None):
     base_interval, rule = timeframe, None
     if timeframe in CUSTOM_TIMEFRAMES:
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
     lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
     results = {}
-    for i in range(0, len(tickers), BATCH_SIZE):
-        grp = [t for t in tickers[i:i + BATCH_SIZE]]
+    needed = []
+    for t in tickers:
+        cached = _read_cache(t, base_interval)
+        if cached is not None:
+            df = _extract_ticker(cached, t, rule, tail)
+            if df is not None:
+                results[t] = df
+                continue
+        needed.append(t)
+    for i in range(0, len(needed), BATCH_SIZE):
+        grp = [t for t in needed[i:i + BATCH_SIZE]]
         if not grp:
             continue
         try:
-            raw = yf.download(grp, period=lookback, interval=base_interval,
-                              group_by="ticker", progress=False, threads=True,
-                              auto_adjust=False)
+            raw = _download_batch(grp, lookback, base_interval)
         except Exception as e:
             print(f"فشل جلب دفعة {grp[0]}..: {e}")
             continue
@@ -361,9 +429,11 @@ def fetch_batch(tickers, timeframe):
             continue
         for t in grp:
             try:
-                df = _extract_ticker(raw, t, rule)
+                single = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
+                df = _extract_ticker(raw, t, rule, tail)
                 if df is not None:
                     results[t] = df
+                    _write_cache(t, base_interval, single)
             except Exception:
                 continue
     return results
@@ -449,120 +519,129 @@ def telegram_alert_message(a):
     if a.get("target_1") is not None:
         lines.append(f"الهدف الأول: {a['target_1']} | الهدف الثاني: {a['target_2']}")
     return "\n".join(lines)
-def run_scan():
+def run_scan(override=None):
     with _state_lock:
         if _state["running"]:
             return
     with _cfg_lock:
         cfg = dict(_config)
+    if override:
+        cfg.update(override)
 
     universe = build_universe(cfg["market"], cfg["sector"])
     zone_tf = zone_timeframe_for(cfg["timeframe"])
+    rsi_max = cfg.get("rsi_max")
+    vol_on = bool(cfg.get("volume_filter"))
+    trend_on = bool(cfg.get("trend_filter"))
+    min_bars = RSI_PERIOD + PIVOT_LEFT + PIVOT_RIGHT + 5
 
     with _state_lock:
         _state.update({
             "running": True, "phase": "جلب البيانات", "total": len(universe),
             "done": 0, "current": "", "bullish": 0, "bearish": 0, "errors": 0,
             "universe_count": len(universe),
+            "market": cfg["market"], "sector": cfg["sector"],
         })
 
     started = time.time()
-    rsi_max = cfg.get("rsi_max")
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص {len(universe)} "
           f"| {MARKET_AR.get(cfg['market'], cfg['market'])} / {cfg['sector']} "
           f"| تنفيذ {cfg['timeframe']} | منطقة من {zone_tf} | RSI شراء <= {rsi_max if rsi_max else 'بدون حد'}")
 
-    tickers = [t for t, _ in universe]
-    exec_data = fetch_batch(tickers, cfg["timeframe"])
-    zone_data = {}
-    if zone_tf != cfg["timeframe"]:
+    try:
+        tickers = [t for t, _ in universe]
+        exec_data = fetch_batch(tickers, cfg["timeframe"], tail=400)
+
         with _state_lock:
-            _state["phase"] = "جلب بيانات منطقة الطلب/العرض"
-        zone_data = fetch_batch(tickers, zone_tf)
+            _state["phase"] = "تحليل المؤشرات"
 
-    min_bars = RSI_PERIOD + PIVOT_LEFT + PIVOT_RIGHT + 5
+        def _process_one(item):
+            t, meta = item
+            df = exec_data.get(t)
+            if df is None or len(df) < min_bars:
+                return 0, 0, False
+            try:
+                bulls = bears = 0
+                zone_cache = {}
+                bullish = detect_signal(df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE,
+                                        rsi_max=rsi_max,
+                                        min_volume_ratio=1.5 if vol_on else None,
+                                        trend_filter=trend_on)
+                bearish = detect_signal_bearish(df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE,
+                                                min_volume_ratio=1.5 if vol_on else None,
+                                                trend_filter=trend_on)
+                for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
+                    if not result or not result.get("fresh_breakout"):
+                        continue
+                    if t not in zone_cache:
+                        if zone_tf == cfg["timeframe"]:
+                            zone_cache[t] = df
+                        else:
+                            zone_cache[t] = fetch_batch([t], zone_tf, tail=250).get(t)
+                    zdf = zone_cache[t]
+                    zone = None
+                    if zdf is not None and len(zdf) >= min_bars:
+                        zone = get_divergence_zone(zdf, direction, RSI_PERIOD,
+                                                   PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE)
+                    zone_low = zone["zone_low"] if zone else None
+                    zone_high = zone["zone_high"] if zone else None
+                    stop, t1, t2 = compute_stops(direction, result["price"],
+                                                 result.get("atr"), zone_low, zone_high)
+                    inserted = save_alert(
+                        cfg["market"], meta.get("sector", cfg["sector"]), t, meta.get("name", ""),
+                        direction, cfg["timeframe"], result["signal_date"],
+                        result["price"], result["rsi_value"], result["peak_level"],
+                        rsi_low=result.get("rsi_low"),
+                        zone_tf=zone_tf,
+                        zone_low=zone_low,
+                        zone_high=zone_high,
+                        stop_loss=stop,
+                        target_1=t1,
+                        target_2=t2,
+                        volume_ratio=result.get("volume_ratio"),
+                    )
+                    if inserted:
+                        a = {
+                            "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
+                            "ticker": t, "name": meta.get("name", ""), "direction": direction,
+                            "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
+                            "price": result["price"], "rsi_value": result["rsi_value"],
+                            "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
+                            "zone_low": zone_low, "zone_high": zone_high,
+                            "stop_loss": stop, "target_1": t1, "target_2": t2,
+                        }
+                        threading.Thread(target=telegram_send,
+                                         args=(telegram_alert_message(a),), daemon=True).start()
+                    if direction == "bullish":
+                        bulls += 1
+                    else:
+                        bears += 1
+                return bulls, bears, False
+            except Exception as e:
+                print(f"  خطأ أثناء فحص {t}: {e}")
+                return 0, 0, True
 
-    with _state_lock:
-        _state["phase"] = "تحليل المؤشرات"
-
-    for t, meta in universe:
-        with _state_lock:
-            _state["current"] = t
-            _state["done"] += 1
-        exec_df = exec_data.get(t)
-        if exec_df is None or len(exec_df) < min_bars:
-            continue
-        try:
-            vol_on = bool(cfg.get("volume_filter"))
-            trend_on = bool(cfg.get("trend_filter"))
-            bullish = detect_signal(exec_df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT,
-                                    TOLERANCE, rsi_max=rsi_max,
-                                    min_volume_ratio=1.5 if vol_on else None,
-                                    trend_filter=trend_on)
-            bearish = detect_signal_bearish(exec_df, RSI_PERIOD, PIVOT_LEFT, PIVOT_RIGHT,
-                                            TOLERANCE,
-                                            min_volume_ratio=1.5 if vol_on else None,
-                                            trend_filter=trend_on)
-            for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
-                if not result or not result.get("fresh_breakout"):
-                    continue
-                p = result["price"]
-                price_min = cfg.get("price_min")
-                price_max = cfg.get("price_max")
-                if price_min is not None and p < price_min:
-                    continue
-                if price_max is not None and p > price_max:
-                    continue
-                zone = None
-                zdf = zone_data.get(t)
-                if zdf is not None and len(zdf) >= min_bars:
-                    zone = get_divergence_zone(zdf, direction, RSI_PERIOD,
-                                               PIVOT_LEFT, PIVOT_RIGHT, TOLERANCE)
-                zone_low = zone["zone_low"] if zone else None
-                zone_high = zone["zone_high"] if zone else None
-                stop, t1, t2 = compute_stops(direction, result["price"],
-                                             result.get("atr"), zone_low, zone_high)
-                inserted = save_alert(
-                    cfg["market"], meta.get("sector", cfg["sector"]), t, meta.get("name", ""),
-                    direction, cfg["timeframe"], result["signal_date"],
-                    result["price"], result["rsi_value"], result["peak_level"],
-                    rsi_low=result.get("rsi_low"),
-                    zone_tf=zone_tf,
-                    zone_low=zone_low,
-                    zone_high=zone_high,
-                    stop_loss=stop,
-                    target_1=t1,
-                    target_2=t2,
-                    volume_ratio=result.get("volume_ratio"),
-                )
+        workers = min(8, max(1, (os.cpu_count() or 2)))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for (t, meta), (nb, ns, err) in zip(universe, ex.map(_process_one, universe)):
                 with _state_lock:
-                    _state["bullish"] += direction == "bullish"
-                    _state["bearish"] += direction == "bearish"
-                if inserted:
-                    a = {
-                        "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
-                        "ticker": t, "name": meta.get("name", ""), "direction": direction,
-                        "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
-                        "price": result["price"], "rsi_value": result["rsi_value"],
-                        "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
-                        "zone_low": zone_low, "zone_high": zone_high,
-                        "stop_loss": stop, "target_1": t1, "target_2": t2,
-                    }
-                    threading.Thread(target=telegram_send,
-                                     args=(telegram_alert_message(a),), daemon=True).start()
-        except Exception as e:
-            with _state_lock:
-                _state["errors"] += 1
-            print(f"  خطأ أثناء فحص {t}: {e}")
-
-    duration = time.time() - started
-    with _state_lock:
-        _state.update({
-            "running": False, "phase": "",
-            "last_scan_at": datetime.now().isoformat(),
-            "last_scan_duration": round(duration, 1),
-        })
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص في {duration:.1f} ث "
+                    _state["current"] = t
+                    _state["done"] += 1
+                    _state["bullish"] += nb
+                    _state["bearish"] += ns
+                    if err:
+                        _state["errors"] += 1
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        with _state_lock:
+            _state.update({
+                "running": False, "phase": "",
+                "last_scan_at": datetime.now().isoformat(),
+                "last_scan_duration": round(time.time() - started, 1),
+            })
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص في {time.time() - started:.1f} ث "
           f"| طلب: {_state['bullish']} | عرض: {_state['bearish']}")
 
 
@@ -626,6 +705,11 @@ def login_page():
     return render_template("login.html")
 
 
+@app.route("/help")
+def help_page():
+    return render_template("help.html")
+
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -676,6 +760,8 @@ def api_meta():
             {"id": "15m", "ar": "15 دقيقة"},
             {"id": "1h", "ar": "ساعة"},
             {"id": "1d", "ar": "يومي"},
+            {"id": "1wk", "ar": "أسبوعي"},
+            {"id": "1mo", "ar": "شهري"},
         ],
         "rsi_options": [
             {"value": None, "ar": "كل الحالات"},
@@ -702,18 +788,11 @@ def api_set_config():
     with _cfg_lock:
         if "market" in data and data["market"] in ("saudi", "us"):
             _config["market"] = data["market"]
-            if data["market"] == "saudi":
-                sectors = {s["id"] for s in market_sectors("saudi")}
-                if _config["sector"] not in sectors | {"all", "indices"}:
-                    _config["sector"] = "all"
-            else:
-                sectors = {s["id"] for s in market_sectors("us")}
-                if _config["sector"] not in sectors | {"all", "indices"}:
-                    _config["sector"] = "all"
+            if _config["sector"] not in _valid_sector_ids(_config["market"]):
+                _config["sector"] = "all"
         if "sector" in data:
             sec = str(data["sector"])
-            sectors = {s["id"] for s in market_sectors(_config["market"])}
-            if sec in sectors | {"all", "indices"}:
+            if sec in _valid_sector_ids(_config["market"]):
                 _config["sector"] = sec
         if "timeframe" in data and data["timeframe"] in EXECUTION_TIMEFRAMES:
             _config["timeframe"] = data["timeframe"]
@@ -741,16 +820,6 @@ def api_set_config():
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
             _config["telegram_chat"] = data["telegram_chat"].strip()
-        for key in ("price_min", "price_max"):
-            if key in data:
-                v = data[key]
-                if v is None or v == "":
-                    _config[key] = None
-                else:
-                    try:
-                        _config[key] = max(0.0, float(v))
-                    except (TypeError, ValueError):
-                        pass
     _save_config()
     return jsonify(_config_payload())
 
@@ -759,7 +828,17 @@ def api_set_config():
 def api_scan_now():
     if _state["running"]:
         return jsonify({"status": "فحص جارٍ بالفعل"}), 409
-    threading.Thread(target=run_scan, daemon=True).start()
+    data = request.get_json(force=True, silent=True) or {}
+    override = {}
+    if data.get("market") in ("saudi", "us"):
+        override["market"] = data["market"]
+    if isinstance(data.get("sector"), str):
+        mkt = data.get("market") if data.get("market") in ("saudi", "us") else _config["market"]
+        if data["sector"] in _valid_sector_ids(mkt):
+            override["sector"] = data["sector"]
+    if data.get("timeframe") in EXECUTION_TIMEFRAMES:
+        override["timeframe"] = data["timeframe"]
+    threading.Thread(target=run_scan, kwargs={"override": override}, daemon=True).start()
     return jsonify({"status": "بدأ الفحص..."})
 
 

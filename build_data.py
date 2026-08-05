@@ -219,9 +219,57 @@ def russell3000(path):
     return len(rows)
 
 
+def all_us_stocks(path):
+    """
+    جميع الأسهم الأمريكية المدرجة: ناسداك + نيويورك + AMEX من دليل NASDAQ الرسمي.
+    يُستبعد: الصناديق المتداولة (ETF)، أوراق الاختبار، والوحدات/الحقوق/الوَرّانات.
+    """
+    seen = {}
+    sources = [
+        ("nasdaq", "https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt", 3, 6),
+        ("nyse-amex", "https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt", 6, 4),
+    ]
+    for src_name, url, test_idx, etf_idx in sources:
+        try:
+            text = _get(url)
+        except Exception as e:
+            print("all_us fetch failed:", src_name, e)
+            continue
+        for ln in text.splitlines():
+            ln = ln.strip()
+            if not ln or ln.startswith("Symbol|") or ln.startswith("ACT Symbol|"):
+                continue
+            parts = ln.split("|")
+            if len(parts) < 2:
+                continue
+            sym = parts[0].strip()
+            name = parts[1].strip()
+            if not sym:
+                continue
+
+            def flag(i):
+                return len(parts) > i and parts[i].strip().upper() == "Y"
+
+            if flag(test_idx) or flag(etf_idx):
+                continue
+            if re.search(r"(?i)\b(warrants?|rights?|units?|when issued)\b", name):
+                continue
+            ticker = sym.replace(".", "-").replace("/", "-")
+            if not ticker:
+                continue
+            if ticker not in seen:
+                seen[ticker] = {"ticker": ticker, "name": name, "source": src_name}
+    rows = sorted(seen.values(), key=lambda r: r["ticker"])
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"source": "nasdaqtrader.com/dynamic/symdir", "count": len(rows), "stocks": rows},
+                  f, ensure_ascii=False, indent=1)
+    return len(rows)
+
+
 if __name__ == "__main__":
     print("saudi:", scrape_saudi(os.path.join(BASE, "saudi_tickers.json")))
     print("sp500:", sp500(os.path.join(BASE, "sp500.json")))
     print("nasdaq100:", nasdaq100(os.path.join(BASE, "nasdaq100.json")))
     print("dow30:", dow30(os.path.join(BASE, "dow30.json")))
     print("russell3000:", russell3000(os.path.join(BASE, "russell3000.json")))
+    print("us_all:", all_us_stocks(os.path.join(BASE, "us_all.json")))

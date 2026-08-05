@@ -13,7 +13,7 @@
     margin: 0;
     padding: 20px;
   }
-  .wrap { max-width: 1280px; margin: 0 auto; }
+  .wrap { max-width: 1650px; margin: 0 auto; }
   h1 { color: #4fd1c5; font-size: 22px; margin-bottom: 4px; }
   p.sub { color: #8a8f98; margin-top: 0; font-size: 13px; }
 
@@ -107,6 +107,8 @@
           <option value="15m">15 دقيقة</option>
           <option value="1h">ساعة</option>
           <option value="1d">يومي</option>
+          <option value="1wk">أسبوعي</option>
+          <option value="1mo">شهري</option>
         </select>
       </div>
       <div class="field">
@@ -137,14 +139,6 @@
           <option value="true">مفعّل</option>
         </select>
       </div>
-      <div class="field">
-        <label>السعر من</label>
-        <input type="number" id="price-min" min="0" step="0.01" placeholder="مثال: 10" style="min-width:110px">
-      </div>
-      <div class="field">
-        <label>السعر إلى</label>
-        <input type="number" id="price-max" min="0" step="0.01" placeholder="مثال: 100" style="min-width:110px">
-      </div>
       <div class="field" style="flex-basis:100%">
         <label>تنبيهات تيليجرام — توكن البوت (أنشئه من @BotFather)</label>
         <input type="text" id="tg-token" placeholder="123456789:AAF..." style="min-width:300px">
@@ -164,6 +158,7 @@
       <button class="btn ghost" onclick="refreshLists()">تحديث قوائم الأسهم</button>
       <button class="btn danger" onclick="clearAlerts()">مسح التنبيهات</button>
       <button class="btn ghost" onclick="showPwdModal()">تغيير كلمة المرور</button>
+      <button class="btn ghost" onclick="window.open('/help', '_blank')">دليل الموقع</button>
       <button class="btn ghost" onclick="logout()">خروج</button>
       <label class="chk"><input type="checkbox" id="only-current" checked> تنبيهات الاختيار الحالي فقط</label>
     </div>
@@ -238,6 +233,8 @@
           <option value="15m">15 دقيقة</option>
           <option value="1h">ساعة</option>
           <option value="1d" selected>يومي</option>
+          <option value="1wk">أسبوعي</option>
+          <option value="1mo">شهري</option>
         </select>
       </div>
       <div class="field">
@@ -268,6 +265,7 @@ function renderSectors() {
   sel.innerHTML = '';
   sel.appendChild(new Option('كل القطاعات', 'all'));
   sel.appendChild(new Option('المؤشرات', 'indices'));
+  if (!meta || !meta.sectors || !meta.sectors[mkt]) { return; }
   const sectors = (meta.sectors[mkt] || []).slice();
   sectors.sort((a, b) => b.count - a.count);
   sectors.forEach(s => sel.appendChild(new Option(`${s.ar} (${s.count})`, s.id)));
@@ -279,7 +277,7 @@ function syncUI() {
   if (!currentConfig) return;
   if (['saudi', 'us'].includes(currentConfig.market)) $('market').value = currentConfig.market;
   renderSectors();
-  if (['15m', '1h', '1d'].includes(currentConfig.timeframe)) $('timeframe').value = currentConfig.timeframe;
+  if (['15m', '1h', '1d', '1wk', '1mo'].includes(currentConfig.timeframe)) $('timeframe').value = currentConfig.timeframe;
 }
 
 function currentSelection() {
@@ -292,8 +290,6 @@ function currentSelection() {
     interval_minutes: parseInt($('interval').value, 10) || 30,
     volume_filter: $('volume-filter').value === 'true',
     trend_filter: $('trend-filter').value === 'true',
-    price_min: $('price-min').value === '' ? null : parseFloat($('price-min').value),
-    price_max: $('price-max').value === '' ? null : parseFloat($('price-max').value),
     telegram_token: $('tg-token').value.trim(),
     telegram_chat: $('tg-chat').value.trim(),
   };
@@ -306,6 +302,7 @@ async function saveConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error('فشل حفظ الإعدادات');
   currentConfig = await res.json();
   $('map-badge').innerHTML =
     `فريم التنفيذ: ${tfLabel(currentConfig.timeframe)} ← المنطقة من: ${tfLabel(currentConfig.zone_timeframe)}`;
@@ -318,7 +315,7 @@ function rsiLabel(v) {
 }
 
 function tfLabel(id) {
-  const map = { '15m': '15 دقيقة', '2h': 'ساعتان', '1h': 'ساعة', '1d': 'يومي', '1wk': 'أسبوعي' };
+  const map = { '15m': '15 دقيقة', '2h': 'ساعتان', '1h': 'ساعة', '1d': 'يومي', '1wk': 'أسبوعي', '1mo': 'شهري' };
   return map[id] || id;
 }
 
@@ -326,7 +323,8 @@ async function loadStatus() {
   try {
     currentConfig = await (await fetch('/api/config')).json();
   } catch (e) { return; }
-  const st = currentConfig.status || {};
+  if (!currentConfig) return;
+  const st = (currentConfig.status) || {};
   const running = !!st.running;
   $('st-running').innerText = running ? 'جارٍ الفحص...' : (currentConfig.auto ? 'تلقائي مفعّل' : 'متوقف');
   $('st-running').style.color = running ? '#f6c453' : (currentConfig.auto ? '#4fd1c5' : '#8a8f98');
@@ -338,7 +336,7 @@ async function loadStatus() {
   const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
   $('progress').style.width = pct + '%';
   $('status-line').innerHTML = running
-    ? `${st.phase || ''} — جاري فحص <b>${st.current || ''}</b> (${st.done || 0}/${st.total || 0})`
+    ? `السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} <b>${st.current || ''}</b> (${st.done || 0}/${st.total || 0})`
     : (st.last_scan_duration != null ? `آخر دورة استغرقت ${st.last_scan_duration} ثانية.` : '');
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
@@ -351,24 +349,23 @@ async function loadStatus() {
   }
   $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
   $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
-  $('price-min').value = currentConfig.price_min != null ? currentConfig.price_min : '';
-  $('price-max').value = currentConfig.price_max != null ? currentConfig.price_max : '';
   $('tg-token').value = currentConfig.telegram_token || '';
   $('tg-chat').value = currentConfig.telegram_chat || '';
 }
 
 async function loadAlerts() {
-  const mkt = $('market').value;
-  const sec = $('sector').value;
-  const onlyCurrent = $('only-current').checked;
-  let url = '/api/alerts?limit=400';
-  if (onlyCurrent) { url += `&market=${mkt}`; if (sec !== 'all') url += `&sector=${sec}`; }
-  const data = await (await fetch(url)).json();
-  const body = $('alerts-body');
-  if (!data.length) {
-    body.innerHTML = '<tr><td colspan="16" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
-    return;
-  }
+  try {
+    const mkt = $('market').value;
+    const sec = $('sector').value;
+    const onlyCurrent = $('only-current').checked;
+    let url = '/api/alerts?limit=400';
+    if (onlyCurrent) { url += `&market=${mkt}`; if (sec !== 'all') url += `&sector=${sec}`; }
+    const data = await (await fetch(url)).json();
+    const body = $('alerts-body');
+    if (!data.length) {
+      body.innerHTML = '<tr><td colspan="16" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
+      return;
+    }
   body.innerHTML = data.map(a => {
     const isBullish = a.direction === 'bullish';
     const tagClass = isBullish ? 'bullish' : 'bearish';
@@ -401,6 +398,7 @@ async function loadAlerts() {
       <td>${t2}</td>
     </tr>`;
   }).join('');
+  } catch (e) { /* تجاهل — سيعاد المحاولة في الدورة القادمة */ }
 }
 
 function esc(s) {
@@ -410,9 +408,30 @@ function esc(s) {
 }
 
 async function scanNow() {
-  await saveConfig();
-  $('status-line').innerHTML = 'بدأ الفحص... قد يستغرق بضع دقائق حسب عدد الأسهم.';
-  await fetch('/api/scan-now', { method: 'POST' });
+  try { await saveConfig(); } catch (e) { /* لا نوقف الفحص إذا فشل حفظ الإعدادات */ }
+  const sel = currentSelection();
+  $('status-line').innerHTML = `بدأ فحص ${sel.market === 'us' ? 'الأمريكي' : 'السعودي'} / ${secLabel(sel.sector)}...`;
+  try {
+    const res = await fetch('/api/scan-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sel),
+    });
+    if (res.status === 409) {
+      const d = await res.json().catch(() => ({}));
+      $('status-line').innerHTML = (d && d.status) || 'فحص جارٍ بالفعل — انتظر اكتماله.';
+    }
+  } catch (e) {
+    $('status-line').innerHTML = 'تعذر بدء الفحص — تحقق من اتصال الخادم.';
+  }
+}
+
+function secLabel(id) {
+  if (!id || id === 'all') return 'كل القطاعات';
+  if (id === 'indices') return 'المؤشرات';
+  const sel = $('sector');
+  const opt = [...sel.options].find(o => o.value === id);
+  return opt ? opt.text : id;
 }
 
 async function toggleAuto() {
@@ -536,10 +555,10 @@ function debounce(fn, ms) {
 
 async function onSelectionChanged() {
   if ($('market').value === 'saudi') {
-    const sectors = (meta.sectors.saudi || []).map(s => s.id);
+    const sectors = (meta && meta.sectors.saudi || []).map(s => s.id);
     if (!['all', 'indices', ...sectors].includes($('sector').value)) $('sector').value = 'all';
   }
-  await saveConfig();
+  try { await saveConfig(); } catch (e) { /* نتجاهل ونكمل لعرض التنبيهات */ }
   loadAlerts();
 }
 
@@ -550,17 +569,20 @@ $('rsi-max').addEventListener('change', () => onSelectionChanged());
 $('interval').addEventListener('change', debounce(saveConfig, 400));
 $('volume-filter').addEventListener('change', debounce(saveConfig, 400));
 $('trend-filter').addEventListener('change', debounce(saveConfig, 400));
-$('price-min').addEventListener('change', debounce(saveConfig, 400));
-$('price-max').addEventListener('change', debounce(saveConfig, 400));
 $('tg-token').addEventListener('change', debounce(saveConfig, 600));
 $('tg-chat').addEventListener('change', debounce(saveConfig, 600));
 $('only-current').addEventListener('change', loadAlerts);
 
 (async function init() {
-  await loadMeta();
-  await loadStatus();
+  let tries = 0;
+  while (!meta && tries < 5) {
+    try { await loadMeta(); } catch (e) {}
+    if (!meta) { await new Promise(r => setTimeout(r, 2000)); }
+    tries++;
+  }
+  try { await loadStatus(); } catch (e) {}
   syncUI();
-  await saveConfig();
+  try { await saveConfig(); } catch (e) {}
   loadAlerts();
 })();
 

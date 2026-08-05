@@ -11,6 +11,8 @@ markets.py
   - Russell 3000:              بيانات iShares Russell 3000 ETF (IWV) من BlackRock
                                (القطاع + الوزن) — تغطي ~98% من السوق الأمريكي،
                                وتُحدَّث تلقائياً من المصدر الحي.
+  - كل الأسهم الأمريكية:       دليل NASDAQ الرسمي (ناسداك + نيويورك + AMEX)
+                               data/us_all.json — جميع الأسهم المدرجة بدون ETF والوَرّانات.
 
 تحديث تلقائي: عند تشغيل التطبيق يتحقق من عمر الملفات المخزنة في data/، وإن كانت
 أقدم من REFRESH_DAYS يستبدلها من المصادر مباشرة.
@@ -87,8 +89,11 @@ def _load(name):
             return _cache[name]
         path = os.path.join(DATA_DIR, name)
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, ValueError):
+                return None
             _cache[name] = data
             return data
         return None
@@ -105,13 +110,15 @@ def _file_age_days(name):
 def refresh_lists(force=False):
     """يعيد جلب القوائم من المصادر إذا كانت قديمة. يعمل في الخلفية حتى لا يبطئ الإقلاع."""
     try:
-        from build_data import (dow30, nasdaq100, russell3000, scrape_saudi, sp500)
+        from build_data import (all_us_stocks, dow30, nasdaq100, russell3000,
+                                scrape_saudi, sp500)
         jobs = {
             "saudi_tickers.json": scrape_saudi,
             "sp500.json": sp500,
             "nasdaq100.json": nasdaq100,
             "dow30.json": dow30,
             "russell3000.json": russell3000,
+            "us_all.json": all_us_stocks,
         }
         for name, fn in jobs.items():
             if force or _file_age_days(name) > REFRESH_DAYS:
@@ -187,14 +194,31 @@ def us_russell_full():
     return out
 
 
+def us_all_stocks():
+    """كل الأسهم الأمريكية المدرجة (ناسداك + نيويورك + AMEX) — القطاع غير مصنّف ما لم يرد في Russell."""
+    data = _load("us_all.json") or {"stocks": []}
+    out = {}
+    for s in data["stocks"]:
+        t = s["ticker"]
+        out[t] = {
+            "name": s.get("name", ""),
+            "sector": "Other",
+            "source": s.get("source", "all-us"),
+        }
+    return out
+
+
 def us_combined_universe():
-    """كل السوق الأمريكي: S&P 500 + ناسداك 100 + داو 30 + Russell 3000 كاملاً."""
-    base = us_base_universe()
-    russ = us_russell_full()
-    for t, m in russ.items():
-        if t not in base:
-            base[t] = m
-    return base
+    """كل السوق الأمريكي: كل الأسهم المدرجة + Russell 3000 + S&P 500 + ناسداك 100 + داو 30."""
+    combined = us_all_stocks()
+    for t, m in us_base_universe().items():
+        combined[t] = m
+    for t, m in us_russell_full().items():
+        if t in combined:
+            combined[t].update(m)
+        else:
+            combined[t] = m
+    return combined
 
 
 def market_sectors(market):
