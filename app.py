@@ -319,6 +319,7 @@ def init_db():
             target_1 REAL,
             target_2 REAL,
             volume_ratio REAL,
+            volume REAL,
             UNIQUE(market, ticker, timeframe, signal_date, direction)
         )
     """)
@@ -336,27 +337,39 @@ def init_db():
     cols = [r[1] for r in conn.execute("PRAGMA table_info(alerts)").fetchall()]
     for col, ctype in (("rsi_low", "REAL"), ("stop_loss", "REAL"),
                        ("target_1", "REAL"), ("target_2", "REAL"),
-                       ("volume_ratio", "REAL")):
+                       ("volume_ratio", "REAL"), ("volume", "REAL")):
         if col not in cols:
             conn.execute(f"ALTER TABLE alerts ADD COLUMN {col} {ctype}")
     conn.commit()
     conn.close()
 
 
+def _canonical_date(value):
+    try:
+        ts = pd.to_datetime(value, utc=True)
+        if pd.isna(ts):
+            return str(value)
+        return ts.tz_localize(None).isoformat()
+    except Exception:
+        return str(value)
+
+
 def save_alert(market, sector, ticker, name, direction, timeframe, signal_date,
                price, rsi_value, peak_level, rsi_low=None,
                zone_tf=None, zone_low=None, zone_high=None,
-               stop_loss=None, target_1=None, target_2=None, volume_ratio=None):
+               stop_loss=None, target_1=None, target_2=None,
+               volume_ratio=None, volume=None):
+    signal_date = _canonical_date(signal_date)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     cur = conn.execute(
         """INSERT OR IGNORE INTO alerts
            (market, sector, ticker, name, direction, timeframe, signal_date,
             price, rsi_value, peak_level, rsi_low, zone_timeframe, zone_low, zone_high,
-            stop_loss, target_1, target_2, volume_ratio, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (market, sector, ticker, name, direction, timeframe, str(signal_date),
+             stop_loss, target_1, target_2, volume_ratio, volume, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (market, sector, ticker, name, direction, timeframe, signal_date,
          price, rsi_value, peak_level, rsi_low, zone_tf, zone_low, zone_high,
-         stop_loss, target_1, target_2, volume_ratio,
+          stop_loss, target_1, target_2, volume_ratio, volume,
          datetime.now().isoformat()),
     )
     inserted = cur.rowcount > 0
@@ -468,7 +481,10 @@ def _write_cache(ticker, interval, df):
         out = df.copy()
         if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
             out.index = out.index.tz_convert("UTC").tz_localize(None)
-        out.reset_index().to_csv(_cache_path(ticker, interval), index=False)
+        path = _cache_path(ticker, interval)
+        tmp = f"{path}.{threading.get_ident()}.tmp"
+        out.reset_index().to_csv(tmp, index=False)
+        os.replace(tmp, path)
     except Exception:
         pass
 
@@ -674,6 +690,8 @@ def telegram_alert_message(a):
         lines.append(f"قاع RSI: {round(a['rsi_low'], 2)}")
     if a.get("volume_ratio") is not None:
         lines.append(f"حجم الاختراق: ×{round(a['volume_ratio'], 2)} المتوسط")
+    if a.get("volume") is not None:
+        lines.append(f"الفوليوم: {round(a['volume']):,}")
     if a.get("zone_low") is not None and a.get("zone_high") is not None:
         lines.append(f"منطقة الطلب/العرض: {round(a['zone_low'], 2)} — {round(a['zone_high'], 2)}")
     if a.get("stop_loss") is not None:
@@ -807,6 +825,7 @@ def run_scan(override=None, claimed=False):
                         target_1=t1,
                         target_2=t2,
                         volume_ratio=result.get("volume_ratio"),
+                        volume=result.get("volume"),
                     )
                     if inserted:
                         a = {
@@ -815,6 +834,7 @@ def run_scan(override=None, claimed=False):
                             "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
                             "price": result["price"], "rsi_value": result["rsi_value"],
                             "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
+                            "volume": result.get("volume"),
                             "zone_low": zone_low, "zone_high": zone_high,
                             "stop_loss": stop, "target_1": t1, "target_2": t2,
                         }

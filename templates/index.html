@@ -223,13 +223,14 @@
           <th>الهدف 2</th>
           <th>RSI (عند الاختراق)</th>
           <th>قاع RSI (الانفراج)</th>
-          <th>الرقبة المخترقة</th>
+          <th title="مستوى RSI الذي تم اختراقه لتأكيد الانفراج">مستوى RSI المخترق (الرقبة)</th>
           <th>منطقة الطلب/العرض</th>
-          <th><button class="sort-btn" type="button" onclick="sortAlerts('volume_ratio')">الفوليوم (×المتوسط) <span class="sort-arrow" id="sort-volume"></span></button></th>
+          <th>الحجم (×المتوسط)</th>
+          <th><button class="sort-btn" type="button" onclick="sortAlerts('volume')">الفوليوم <span class="sort-arrow" id="sort-volume"></span></button></th>
         </tr>
       </thead>
       <tbody id="alerts-body">
-        <tr><td colspan="16" class="empty">جارِ التحميل...</td></tr>
+        <tr><td colspan="17" class="empty">جارِ التحميل...</td></tr>
       </tbody>
     </table>
   </div>
@@ -338,7 +339,7 @@ function tfLabel(id) {
   return map[id] || id;
 }
 
-async function loadStatus() {
+async function loadStatus(syncControls = false) {
   try {
     currentConfig = await (await fetch('/api/config')).json();
   } catch (e) { return; }
@@ -360,20 +361,22 @@ async function loadStatus() {
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
   $('btn-stop').style.display = running ? 'inline-block' : 'none';
-  $('interval').value = currentConfig.interval_minutes;
-  if (currentConfig.rsi_max == null || currentConfig.rsi_max === '') {
-    $('rsi-max').value = '';
-  } else {
-    const opts = [...$('rsi-max').options].map(o => o.value);
-    $('rsi-max').value = opts.includes(String(currentConfig.rsi_max)) ? String(currentConfig.rsi_max) : '';
+  if (syncControls) {
+    $('interval').value = currentConfig.interval_minutes;
+    if (currentConfig.rsi_max == null || currentConfig.rsi_max === '') {
+      $('rsi-max').value = '';
+    } else {
+      const opts = [...$('rsi-max').options].map(o => o.value);
+      $('rsi-max').value = opts.includes(String(currentConfig.rsi_max)) ? String(currentConfig.rsi_max) : '';
+    }
+    $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
+    $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
+    if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
+      $('signal-filter').value = currentConfig.signal_filter;
+    }
+    $('tg-token').value = currentConfig.telegram_token || '';
+    $('tg-chat').value = currentConfig.telegram_chat || '';
   }
-  $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
-  $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
-  if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
-    $('signal-filter').value = currentConfig.signal_filter;
-  }
-  $('tg-token').value = currentConfig.telegram_token || '';
-  $('tg-chat').value = currentConfig.telegram_chat || '';
 }
 
 async function loadAlerts() {
@@ -403,7 +406,7 @@ async function loadAlerts() {
     }
     const body = $('alerts-body');
     if (!data.length) {
-      body.innerHTML = '<tr><td colspan="16" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
+      body.innerHTML = '<tr><td colspan="17" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
       return;
     }
   body.innerHTML = data.map(a => {
@@ -416,6 +419,7 @@ async function loadAlerts() {
     const sectorAr = (meta && (meta.sector_ar[a.sector] || a.sector)) || a.sector;
     const marketAr = a.market === 'saudi' ? 'تاسي' : 'أمريكا';
     const vol = a.volume_ratio != null ? '×' + Number(a.volume_ratio).toFixed(2) : '—';
+    const volume = a.volume != null ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(a.volume)) : '—';
     const stop = a.stop_loss != null ? Number(a.stop_loss).toFixed(2) : '—';
     const t1 = a.target_1 != null ? Number(a.target_1).toFixed(2) : '—';
     const t2 = a.target_2 != null ? Number(a.target_2).toFixed(2) : '—';
@@ -436,6 +440,7 @@ async function loadAlerts() {
       <td>${Number(a.peak_level).toFixed(2)}</td>
       <td>${zone}</td>
       <td class="muted">${vol}</td>
+      <td>${volume}</td>
     </tr>`;
   }).join('');
   } catch (e) { /* تجاهل — سيعاد المحاولة في الدورة القادمة */ }
@@ -448,7 +453,7 @@ function sortAlerts(key) {
     alertSort = { key, direction: 'desc' };
   }
   $('sort-price').textContent = alertSort.key === 'price' ? (alertSort.direction === 'desc' ? '▼' : '▲') : '';
-  $('sort-volume').textContent = alertSort.key === 'volume_ratio' ? (alertSort.direction === 'desc' ? '▼' : '▲') : '';
+  $('sort-volume').textContent = alertSort.key === 'volume' ? (alertSort.direction === 'desc' ? '▼' : '▲') : '';
   loadAlerts();
 }
 
@@ -648,7 +653,7 @@ $('only-current').addEventListener('change', loadAlerts);
     if (!meta) { await new Promise(r => setTimeout(r, 2000)); }
     tries++;
   }
-  try { await loadStatus(); } catch (e) {}
+  try { await loadStatus(true); } catch (e) {}
   syncUI();
   loadAlerts();
 })();

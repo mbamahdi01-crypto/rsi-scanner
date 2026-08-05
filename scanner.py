@@ -50,14 +50,21 @@ def _volume_at_break(df: pd.DataFrame, pos: int, threshold: float = 1.5):
         return None, False
     if pd.isna(avg_vol) or avg_vol <= 0:
         return None, False
-    try:
-        bar_vol = float(vol.iloc[pos])
-    except (TypeError, ValueError):
-        return None, False
-    if not np.isfinite(bar_vol) or bar_vol < 0:
+    bar_vol = _volume_value(df, pos)
+    if bar_vol is None:
         return None, False
     ratio = float(bar_vol / avg_vol)
     return ratio, ratio >= threshold
+
+
+def _volume_value(df: pd.DataFrame, pos: int):
+    if "Volume" not in df.columns:
+        return None
+    try:
+        value = float(df["Volume"].iloc[pos])
+    except (TypeError, ValueError):
+        return None
+    return value if np.isfinite(value) and value >= 0 else None
 
 
 def _trend_at_break(df: pd.DataFrame, direction: str, pos: int, period: int = 200):
@@ -247,6 +254,7 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
         "volume_ratio": vol_ratio,
+        "volume": _volume_value(df, first_break_pos),
         "trend_ok": trend_ok,
         "atr": atr_val,
     }
@@ -311,6 +319,7 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
         "volume_ratio": vol_ratio,
+        "volume": _volume_value(df, first_break_pos),
         "trend_ok": trend_ok,
         "atr": atr_val,
     }
