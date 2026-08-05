@@ -24,6 +24,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import urllib.request
 from datetime import datetime
 
 import pandas as pd
@@ -642,6 +643,16 @@ def api_refresh_lists():
 _services_started = False
 
 
+def keepalive_loop():
+    url = os.environ.get("APP_URL", "https://rsi-scanner-3xka.onrender.com/api/health")
+    while True:
+        try:
+            urllib.request.urlopen(url, timeout=15)
+        except Exception:
+            pass
+        time.sleep(600)
+
+
 def start_services():
     global _services_started
     if _services_started:
@@ -651,6 +662,7 @@ def start_services():
     _ensure_initial_password()
     start_background_refresh()
     threading.Thread(target=scheduler_loop, daemon=True).start()
+    threading.Thread(target=keepalive_loop, daemon=True).start()
 
 
 start_services()
