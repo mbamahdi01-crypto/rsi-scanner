@@ -78,18 +78,15 @@ def find_pivots(series: pd.Series, left: int = 3, right: int = 3, mode: str = "l
     يرجع مواقع (index مواقع صحيحة) القمم أو القيعان التأرجحية.
     mode='low' يبحث عن قيعان، mode='high' يبحث عن قمم.
     """
-    n = len(series)
-    pivots = []
-    for i in range(left, n - right):
-        val = series.iloc[i]
-        if pd.isna(val):
-            continue
-        window = series.iloc[i - left: i + right + 1]
-        if window.isna().any():
-            continue
-        is_pivot = (val == window.min()) if mode == "low" else (val == window.max())
-        if is_pivot:
-            pivots.append(i)
+    values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    width = left + right + 1
+    if len(values) < width:
+        return []
+    windows = np.lib.stride_tricks.sliding_window_view(values, width)
+    centers = windows[:, left]
+    valid = ~np.isnan(windows).any(axis=1)
+    extrema = np.min(windows, axis=1) if mode == "low" else np.max(windows, axis=1)
+    pivots = (np.flatnonzero(valid & (centers == extrema)) + left).tolist()
 
     cleaned = []
     for p in pivots:

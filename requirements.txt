@@ -1,6 +1,5 @@
 Flask>=3.0
 gunicorn>=21.0
-yfinance>=1.0
 pandas>=2.2
 numpy>=1.26
 lxml>=5.0

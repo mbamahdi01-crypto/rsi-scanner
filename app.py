@@ -31,7 +31,6 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 
 import pandas as pd
-import yfinance as yf
 from flask import Flask, jsonify, redirect, render_template, request, session
 
 from markets import (SAUDI_INDICES, US_INDICES, US_SECTOR_AR, SAUDI_SECTOR_AR,
@@ -75,8 +74,8 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 24           # أكثر من ذلك يسبب تقييد Yahoo بدلاً من التسريع
-YF_REQUEST_TIMEOUT = 12   # مهلة كل سهم حتى لا يعلق الفحص كله
+YF_WORKERS = 64           # الحد العملي الأعلى لطلبات Yahoo Chart المتزامنة
+YF_REQUEST_TIMEOUT = 8    # مهلة كل سهم حتى لا يعلق الفحص كله
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
 
@@ -397,19 +396,54 @@ def _write_cache(ticker, interval, df):
 
 
 def _download_one(ticker, lookback, base_interval):
-    try:
-        raw = yf.Ticker(ticker).history(
-            period=lookback,
-            interval=base_interval,
-            auto_adjust=False,
-            actions=False,
-            prepost=False,
-            timeout=YF_REQUEST_TIMEOUT,
-        )
-        return raw if raw is not None and not raw.empty else None
-    except Exception as e:
-        print(f"فشل جلب {ticker}: {e}")
-        return None
+    symbol = urllib.parse.quote(str(ticker), safe="")
+    query = urllib.parse.urlencode({
+        "range": lookback,
+        "interval": base_interval,
+        "includePrePost": "false",
+        "events": "div,splits",
+    })
+    last_error = None
+    hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+    if sum(map(ord, str(ticker))) % 2:
+        hosts = tuple(reversed(hosts))
+    for attempt, host in enumerate(hosts):
+        url = f"https://{host}/v8/finance/chart/{symbol}?{query}"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; RSI-Scanner/2.0)",
+            "Accept": "application/json",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=YF_REQUEST_TIMEOUT) as response:
+                payload = json.load(response)
+            result = (payload.get("chart", {}).get("result") or [None])[0]
+            if not result:
+                return None
+            timestamps = result.get("timestamp") or []
+            quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+            if not timestamps or not quote:
+                return None
+
+            def _values(name):
+                values = list(quote.get(name) or [])
+                return (values + [None] * len(timestamps))[:len(timestamps)]
+
+            raw = pd.DataFrame({
+                "Open": _values("open"),
+                "High": _values("high"),
+                "Low": _values("low"),
+                "Close": _values("close"),
+                "Volume": _values("volume"),
+            }, index=pd.to_datetime(timestamps, unit="s", utc=True))
+            raw.index.name = "Datetime" if base_interval.endswith(("m", "h")) else "Date"
+            raw = raw.dropna(subset=["Open", "High", "Low", "Close"])
+            return raw if not raw.empty else None
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                time.sleep(0.25)
+    print(f"فشل جلب {ticker}: {last_error}")
+    return None
 
 
 def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_WORKERS):
@@ -767,7 +801,7 @@ def logout():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"ok": True, "engine": "stream-v2", "workers": YF_WORKERS})
+    return jsonify({"ok": True, "engine": "chart-v4", "workers": YF_WORKERS})
 
 
 @app.route("/api/login", methods=["POST"])
