@@ -30,7 +30,7 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Set the COPILOT_PAT repository secret to enable AI review."
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.auth.outputs.enabled == 'true'
         with:
           node-version: "22"
