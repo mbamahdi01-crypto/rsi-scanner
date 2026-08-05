@@ -85,6 +85,8 @@ DEFAULTS = {
     "interval_minutes": SCAN_INTERVAL_DEFAULT,
     "volume_filter": False,     # اشتراط حجم شمعة الاختراق >= 1.5 × متوسط آخر 20 شمعة
     "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
+    "price_min": None,          # الحد الأدنى لسعر السهم في التنبيه (اختياري)
+    "price_max": None,          # الحد الأقصى لسعر السهم في التنبيه (اختياري)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
 }
@@ -119,6 +121,12 @@ def _load_config():
             cfg["telegram_token"] = saved["telegram_token"]
         if isinstance(saved.get("telegram_chat"), str):
             cfg["telegram_chat"] = saved["telegram_chat"]
+        for key in ("price_min", "price_max"):
+            v = saved.get(key)
+            if isinstance(v, (int, float)) and v > 0:
+                cfg[key] = float(v)
+            else:
+                cfg[key] = None
         # فريم التنفيذ: يومي دائماً عند الإقلاع — المستخدم يغيّره وقت الحاجة فقط
         cfg["timeframe"] = DEFAULTS["timeframe"]
     except (OSError, ValueError):
@@ -498,6 +506,13 @@ def run_scan():
             for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
                 if not result or not result.get("fresh_breakout"):
                     continue
+                p = result["price"]
+                price_min = cfg.get("price_min")
+                price_max = cfg.get("price_max")
+                if price_min is not None and p < price_min:
+                    continue
+                if price_max is not None and p > price_max:
+                    continue
                 zone = None
                 zdf = zone_data.get(t)
                 if zdf is not None and len(zdf) >= min_bars:
@@ -726,6 +741,16 @@ def api_set_config():
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
             _config["telegram_chat"] = data["telegram_chat"].strip()
+        for key in ("price_min", "price_max"):
+            if key in data:
+                v = data[key]
+                if v is None or v == "":
+                    _config[key] = None
+                else:
+                    try:
+                        _config[key] = max(0.0, float(v))
+                    except (TypeError, ValueError):
+                        pass
     _save_config()
     return jsonify(_config_payload())
 
