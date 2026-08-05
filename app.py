@@ -19,6 +19,7 @@ app.py
 import hashlib
 import hmac
 import html
+import http.client
 import json
 import os
 import re
@@ -86,7 +87,7 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 64           # الحد العملي الأعلى لطلبات Yahoo Chart المتزامنة
+YF_WORKERS = 96           # طلبات متزامنة مع اتصالات HTTP معاد استخدامها
 YF_REQUEST_TIMEOUT = 8    # مهلة كل سهم حتى لا يعلق الفحص كله
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
@@ -489,6 +490,40 @@ def _write_cache(ticker, interval, df):
         pass
 
 
+_http_local = threading.local()
+
+
+def _yahoo_json(host, path):
+    connections = getattr(_http_local, "connections", None)
+    if connections is None:
+        connections = {}
+        _http_local.connections = connections
+    for retry in range(2):
+        conn = connections.get(host)
+        if conn is None:
+            conn = http.client.HTTPSConnection(host, timeout=YF_REQUEST_TIMEOUT)
+            connections[host] = conn
+        try:
+            conn.request("GET", path, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; RSI-Scanner/2.0)",
+                "Accept": "application/json",
+            })
+            response = conn.getresponse()
+            body = response.read()
+            if response.status != 200:
+                raise RuntimeError(f"Yahoo HTTP {response.status}")
+            return json.loads(body.decode("utf-8"))
+        except (OSError, http.client.HTTPException, RuntimeError, ValueError):
+            try:
+                conn.close()
+            except OSError:
+                pass
+            connections.pop(host, None)
+            if retry:
+                raise
+    raise RuntimeError("تعذر الاتصال بـ Yahoo")
+
+
 def _download_one(ticker, lookback, base_interval):
     symbol = urllib.parse.quote(str(ticker), safe="")
     query = urllib.parse.urlencode({
@@ -502,14 +537,9 @@ def _download_one(ticker, lookback, base_interval):
     if sum(map(ord, str(ticker))) % 2:
         hosts = tuple(reversed(hosts))
     for attempt, host in enumerate(hosts):
-        url = f"https://{host}/v8/finance/chart/{symbol}?{query}"
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; RSI-Scanner/2.0)",
-            "Accept": "application/json",
-        })
+        path = f"/v8/finance/chart/{symbol}?{query}"
         try:
-            with urllib.request.urlopen(req, timeout=YF_REQUEST_TIMEOUT) as response:
-                payload = json.load(response)
+            payload = _yahoo_json(host, path)
             result = (payload.get("chart", {}).get("result") or [None])[0]
             if not result:
                 return None
@@ -545,19 +575,13 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
     if timeframe in CUSTOM_TIMEFRAMES:
         base_interval, rule = CUSTOM_TIMEFRAMES[timeframe]
     lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
-    needed = []
-    for t in tickers:
-        if stop_event is not None and stop_event.is_set():
-            return
-        cached = _read_cache(t, base_interval)
-        if cached is not None:
-            df = _extract_ticker(cached, t, rule, tail)
-            if df is not None:
-                yield t, df
-                continue
-        needed.append(t)
-
     def _fetch_one(ticker):
+        cached = _read_cache(ticker, base_interval)
+        if cached is not None:
+            try:
+                return _extract_ticker(cached, ticker, rule, tail)
+            except Exception:
+                pass
         raw = _download_one(ticker, lookback, base_interval)
         if raw is None:
             return None
@@ -568,8 +592,9 @@ def _iter_histories(tickers, timeframe, tail=None, stop_event=None, workers=YF_W
             print(f"فشل تجهيز بيانات {ticker}: {e}")
             return None
 
-    pending = iter(needed)
-    workers = min(workers, max(1, len(needed)))
+    tickers = list(tickers)
+    pending = iter(tickers)
+    workers = min(workers, max(1, len(tickers)))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {}
         for _ in range(workers):
