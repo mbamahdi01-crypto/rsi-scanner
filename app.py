@@ -90,8 +90,8 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 64           # توازن: 96 تسبب تقييداً من Yahoo عند IP واحد
-YF_REQUEST_TIMEOUT = 8    # مهلة كل سهم حتى لا يعلق الفحص كله
+YF_WORKERS = 80           # اتصالات طازجة + تناوب query1/query2 يسمح بتوازٍ أعلى
+YF_REQUEST_TIMEOUT = 6    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 # ================================================================
 
@@ -544,8 +544,6 @@ def _write_cache(ticker, interval, df):
         pass
 
 
-_http_local = threading.local()
-
 _YF_USER_AGENTS = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
@@ -555,46 +553,37 @@ _YF_USER_AGENTS = (
 
 
 def _yahoo_json(host, path):
-    connections = getattr(_http_local, "connections", None)
-    if connections is None:
-        connections = {}
-        _http_local.connections = connections
     ua = random.choice(_YF_USER_AGENTS)
+    last_error = None
     for retry in range(3):
-        conn = connections.get(host)
-        if conn is None:
-            conn = http.client.HTTPSConnection(host, timeout=YF_REQUEST_TIMEOUT)
-            connections[host] = conn
+        conn = http.client.HTTPSConnection(host, timeout=YF_REQUEST_TIMEOUT)
         try:
             conn.request("GET", path, headers={
                 "User-Agent": ua,
                 "Accept": "application/json",
                 "Accept-Encoding": "gzip",
-                "Connection": "keep-alive",
+                "Connection": "close",
             })
             response = conn.getresponse()
             body = response.read()
             if response.status == 429 or response.status >= 500:
-                try:
-                    conn.close()
-                except OSError:
-                    pass
-                connections.pop(host, None)
-                time.sleep(0.5 * (retry + 1))
+                last_error = RuntimeError(f"Yahoo HTTP {response.status}")
+                time.sleep(0.6 * (retry + 1))
                 continue
             if response.status != 200:
                 raise RuntimeError(f"Yahoo HTTP {response.status}")
             if response.getheader("Content-Encoding") == "gzip":
                 body = gzip.decompress(body)
             return json.loads(body.decode("utf-8"))
-        except (OSError, http.client.HTTPException, ValueError):
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            last_error = e
+            time.sleep(0.4 * (retry + 1))
+        finally:
             try:
                 conn.close()
             except OSError:
                 pass
-            connections.pop(host, None)
-            time.sleep(0.4 * (retry + 1))
-    raise RuntimeError("تعذر الاتصال بـ Yahoo")
+    raise last_error or RuntimeError("تعذر الاتصال بـ Yahoo")
 
 
 def _download_one(ticker, lookback, base_interval):
@@ -1195,9 +1184,11 @@ def api_scan_now():
     if data.get("market") in ("saudi", "us"):
         override["market"] = data["market"]
     if isinstance(data.get("sector"), str):
-        mkt = data.get("market") if data.get("market") in ("saudi", "us") else _config["market"]
+        mkt = override.get("market", _config["market"])
         if data["sector"] in _valid_sector_ids(mkt):
             override["sector"] = data["sector"]
+        else:
+            override["sector"] = "all"
     if data.get("timeframe") in EXECUTION_TIMEFRAMES:
         override["timeframe"] = data["timeframe"]
     if not _launch_scan(override):
