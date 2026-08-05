@@ -18,10 +18,12 @@ app.py
 
 import hashlib
 import hmac
+import html
 import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -44,8 +46,18 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
+BUNDLED_DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "alerts.db")
 YF_CACHE_DIR = os.path.join(DATA_DIR, "yf_cache")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+if os.path.abspath(DATA_DIR) != os.path.abspath(BUNDLED_DATA_DIR):
+    for _seed_name in ("saudi_tickers.json", "sp500.json", "nasdaq100.json",
+                       "dow30.json", "russell3000.json", "us_all.json"):
+        _source = os.path.join(BUNDLED_DATA_DIR, _seed_name)
+        _target = os.path.join(DATA_DIR, _seed_name)
+        if os.path.exists(_source) and not os.path.exists(_target):
+            shutil.copy2(_source, _target)
 
 # ==================== الإعدادات ====================
 EXECUTION_TIMEFRAMES = ["15m", "1h", "1d", "1wk", "1mo"]
@@ -134,20 +146,36 @@ def _load_config():
             cfg["telegram_chat"] = saved["telegram_chat"]
         if saved.get("signal_filter") in ("both", "bullish", "bearish"):
             cfg["signal_filter"] = saved["signal_filter"]
-        # فريم التنفيذ: يومي دائماً عند الإقلاع — المستخدم يغيّره وقت الحاجة فقط
-        cfg["timeframe"] = DEFAULTS["timeframe"]
+        if saved.get("timeframe") in EXECUTION_TIMEFRAMES:
+            cfg["timeframe"] = saved["timeframe"]
     except (OSError, ValueError):
         pass
     return cfg
 
 
-def _save_config():
+def _atomic_json_write(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(_config, f, ensure_ascii=False, indent=1)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        return True
     except OSError as e:
-        print("تعذر حفظ الإعدادات:", e)
+        print("تعذر حفظ الملف:", e)
+        return False
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _save_config(cfg=None):
+    return _atomic_json_write(CONFIG_PATH, cfg if cfg is not None else _config)
 
 
 _config = _load_config()
@@ -185,15 +213,13 @@ def _load_secret():
 
 
 def _save_secret(d):
-    try:
-        os.makedirs(os.path.dirname(SECRET_PATH), exist_ok=True)
-        with open(SECRET_PATH, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False, indent=1)
-    except OSError as e:
-        print("تعذر حفظ أسرار التطبيق:", e)
+    return _atomic_json_write(SECRET_PATH, d)
 
 
 def _get_session_key():
+    env_key = os.environ.get("SESSION_SECRET", "").strip()
+    if len(env_key) >= 32:
+        return env_key
     with _secret_lock:
         d = _load_secret()
         if not d.get("session_key"):
@@ -213,7 +239,8 @@ def _set_password(pw):
         d = _load_secret()
         d["pwd_salt"] = salt
         d["pwd_hash"] = _hash_password(pw, salt)
-        _save_secret(d)
+        if not _save_secret(d):
+            raise OSError("تعذر حفظ كلمة المرور")
 
 
 def _has_password():
@@ -243,6 +270,9 @@ def _ensure_initial_password():
 
 app.secret_key = _get_session_key()
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+_secure_default = "true" if os.environ.get("RENDER") else "false"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
 
 
@@ -292,6 +322,16 @@ def init_db():
             UNIQUE(market, ticker, timeframe, signal_date, direction)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scan_snapshots (
+            cache_key TEXT PRIMARY KEY,
+            completed_at REAL NOT NULL,
+            total INTEGER NOT NULL,
+            bullish INTEGER NOT NULL,
+            bearish INTEGER NOT NULL,
+            errors INTEGER NOT NULL
+        )
+    """)
     conn.commit()
     cols = [r[1] for r in conn.execute("PRAGMA table_info(alerts)").fetchall()]
     for col, ctype in (("rsi_low", "REAL"), ("stop_loss", "REAL"),
@@ -323,6 +363,44 @@ def save_alert(market, sector, ticker, name, direction, timeframe, signal_date,
     conn.commit()
     conn.close()
     return inserted
+
+
+def _scan_cache_key(cfg, universe):
+    tickers = "\n".join(ticker for ticker, _ in universe)
+    universe_hash = hashlib.sha256(tickers.encode("utf-8")).hexdigest()[:16]
+    profile = {
+        "market": cfg["market"], "sector": cfg["sector"],
+        "timeframe": cfg["timeframe"], "rsi_max": cfg.get("rsi_max"),
+        "volume_filter": bool(cfg.get("volume_filter")),
+        "trend_filter": bool(cfg.get("trend_filter")),
+        "universe": universe_hash,
+    }
+    return hashlib.sha256(json.dumps(profile, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _load_scan_snapshot(cache_key, timeframe):
+    base_interval = CUSTOM_TIMEFRAMES.get(timeframe, (timeframe, None))[0]
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        row = conn.execute(
+            "SELECT completed_at,total,bullish,bearish,errors FROM scan_snapshots WHERE cache_key=?",
+            (cache_key,),
+        ).fetchone()
+    if not row or time.time() - row[0] > _cache_ttl(base_interval):
+        return None
+    return {"total": row[1], "bullish": row[2], "bearish": row[3], "errors": row[4]}
+
+
+def _save_scan_snapshot(cache_key, summary):
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute(
+            """INSERT INTO scan_snapshots(cache_key,completed_at,total,bullish,bearish,errors)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(cache_key) DO UPDATE SET
+                 completed_at=excluded.completed_at,total=excluded.total,
+                 bullish=excluded.bullish,bearish=excluded.bearish,errors=excluded.errors""",
+            (cache_key, time.time(), summary["total"], summary["bullish"],
+             summary["bearish"], summary["errors"]),
+        )
 
 
 # ==================== جلب البيانات (جماعي) ====================
@@ -578,12 +656,17 @@ def telegram_alert_message(a):
     market = "تاسي" if a["market"] == "saudi" else "أمريكا"
     tag = "شراء / طلب" if a["direction"] == "bullish" else "بيع / عرض"
     icon = "🔵" if a["direction"] == "bullish" else "🔴"
+    ticker = html.escape(str(a.get("ticker") or "—"))
+    name = html.escape(str(a.get("name") or "—"))
+    sector = html.escape(str(a.get("sector") or "—"))
+    timeframe = html.escape(str(a.get("timeframe") or "—"))
+    signal_date = html.escape(str(a.get("signal_date") or "—"))
     lines = [
-        f"{icon} <b>{tag}: {a['ticker']}</b>",
-        f"الاسم: {a.get('name') or '—'}",
-        f"السوق: {market} | القطاع: {a.get('sector') or '—'}",
-        f"فريم التنفيذ: {a['timeframe']}",
-        f"شمعة الإشارة: {a['signal_date']}",
+        f"{icon} <b>{tag}: {ticker}</b>",
+        f"الاسم: {name}",
+        f"السوق: {market} | القطاع: {sector}",
+        f"فريم التنفيذ: {timeframe}",
+        f"شمعة الإشارة: {signal_date}",
         f"السعر: {a['price']}",
         f"RSI عند الاختراق: {round(a['rsi_value'], 2)}",
     ]
@@ -598,21 +681,51 @@ def telegram_alert_message(a):
     if a.get("target_1") is not None:
         lines.append(f"الهدف الأول: {a['target_1']} | الهدف الثاني: {a['target_2']}")
     return "\n".join(lines)
-def run_scan(override=None):
+def _claim_scan():
     with _state_lock:
         if _state["running"]:
-            return
-    with _cfg_lock:
-        cfg = dict(_config)
-    if override:
-        cfg.update(override)
+            return False
+        _state["running"] = True
+        _state["phase"] = "تهيئة الفحص"
+        return True
 
-    universe = build_universe(cfg["market"], cfg["sector"])
-    zone_tf = zone_timeframe_for(cfg["timeframe"])
-    rsi_max = cfg.get("rsi_max")
-    vol_on = bool(cfg.get("volume_filter"))
-    trend_on = bool(cfg.get("trend_filter"))
-    min_bars = RSI_PERIOD + PIVOT_LEFT + PIVOT_RIGHT + 5
+
+def _launch_scan(override=None):
+    if not _claim_scan():
+        return False
+    _stop_event.clear()
+    try:
+        threading.Thread(target=run_scan,
+                         kwargs={"override": override, "claimed": True},
+                         daemon=True).start()
+    except Exception:
+        with _state_lock:
+            _state["running"] = False
+            _state["phase"] = ""
+        raise
+    return True
+
+
+def run_scan(override=None, claimed=False):
+    if not claimed and not _claim_scan():
+        return
+    started = time.time()
+    try:
+        with _cfg_lock:
+            cfg = dict(_config)
+        if override:
+            cfg.update(override)
+        universe = build_universe(cfg["market"], cfg["sector"])
+        zone_tf = zone_timeframe_for(cfg["timeframe"])
+        rsi_max = cfg.get("rsi_max")
+        vol_on = bool(cfg.get("volume_filter"))
+        trend_on = bool(cfg.get("trend_filter"))
+        min_bars = RSI_PERIOD + PIVOT_LEFT + PIVOT_RIGHT + 5
+    except Exception as e:
+        print(f"تعذر تهيئة الفحص: {e}")
+        with _state_lock:
+            _state.update({"running": False, "phase": "", "last_scan_status": "failed"})
+        return
 
     with _state_lock:
         _state.update({
@@ -622,11 +735,29 @@ def run_scan(override=None):
             "market": cfg["market"], "sector": cfg["sector"],
         })
 
-    started = time.time()
+    cache_key = _scan_cache_key(cfg, universe)
+    try:
+        snapshot = _load_scan_snapshot(cache_key, cfg["timeframe"])
+    except sqlite3.Error as e:
+        print(f"تعذر قراءة نتيجة الفحص المحفوظة: {e}")
+        snapshot = None
+    if snapshot and snapshot["total"] == len(universe):
+        with _state_lock:
+            _state.update({
+                "running": False, "phase": "", "done": snapshot["total"],
+                "bullish": snapshot["bullish"], "bearish": snapshot["bearish"],
+                "errors": snapshot["errors"], "last_scan_at": datetime.now().isoformat(),
+                "last_scan_duration": round(time.time() - started, 1),
+                "last_scan_status": "cached",
+            })
+        print(f"استخدام نتيجة فحص محفوظة حديثة: {len(universe)} سهم")
+        return
+
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص {len(universe)} "
           f"| {MARKET_AR.get(cfg['market'], cfg['market'])} / {cfg['sector']} "
           f"| تنفيذ {cfg['timeframe']} | منطقة من {zone_tf} | RSI شراء <= {rsi_max if rsi_max else 'بدون حد'}")
 
+    scan_failed = False
     try:
         items = list(universe)
         ticker_meta = {ticker: meta for ticker, meta in items}
@@ -636,7 +767,7 @@ def run_scan(override=None):
 
         def _analyze_one(t, meta, df):
             if df is None or len(df) < min_bars:
-                return 0, 0, False
+                return 0, 0, True
             try:
                 bulls = bears = 0
                 zone_cache = {}
@@ -716,13 +847,26 @@ def run_scan(override=None):
     except Exception:
         import traceback
         traceback.print_exc()
+        scan_failed = True
+    else:
+        scan_failed = False
     finally:
+        cancelled = _stop_event.is_set()
         with _state_lock:
+            summary = {
+                "total": _state["total"], "done": _state["done"],
+                "bullish": _state["bullish"], "bearish": _state["bearish"],
+                "errors": _state["errors"],
+            }
             _state.update({
                 "running": False, "phase": "",
                 "last_scan_at": datetime.now().isoformat(),
                 "last_scan_duration": round(time.time() - started, 1),
+                "last_scan_status": "cancelled" if cancelled else ("failed" if scan_failed else "completed"),
             })
+        if (not cancelled and not scan_failed and summary["done"] == summary["total"]
+                and summary["errors"] == 0):
+            _save_scan_snapshot(cache_key, summary)
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص في {time.time() - started:.1f} ث "
           f"| طلب: {_state['bullish']} | عرض: {_state['bearish']}")
 
@@ -744,8 +888,7 @@ def scheduler_loop():
                 last_dt = datetime.fromisoformat(last)
                 overdue = (datetime.now() - last_dt).total_seconds() >= interval * 60
             if overdue:
-                _stop_event.clear()
-                threading.Thread(target=run_scan, daemon=True).start()
+                _launch_scan()
         except Exception as e:
             print("خطأ في الجدولة:", e)
 
@@ -827,8 +970,8 @@ def api_change_password():
     new = str(data.get("new", ""))
     if not _check_password(old):
         return jsonify({"ok": False, "error": "كلمة المرور الحالية غير صحيحة"}), 401
-    if len(new) < 4:
-        return jsonify({"ok": False, "error": "كلمة المرور الجديدة قصيرة جداً (4 أحرف على الأقل)"}), 400
+    if len(new) < 8:
+        return jsonify({"ok": False, "error": "كلمة المرور الجديدة قصيرة جداً (8 أحرف على الأقل)"}), 400
     _set_password(new)
     return jsonify({"ok": True})
 
@@ -883,36 +1026,34 @@ def api_set_config():
             v = data["rsi_max"]
             if v is None or v == "":
                 _config["rsi_max"] = None
-            else:
-                try:
-                    _config["rsi_max"] = int(v)
-                except (TypeError, ValueError):
-                    pass
-        if "auto" in data:
-            _config["auto"] = bool(data["auto"])
+            elif v in (20, 30, 40, 50) or str(v) in ("20", "30", "40", "50"):
+                _config["rsi_max"] = int(v)
+        if "auto" in data and isinstance(data["auto"], bool):
+            _config["auto"] = data["auto"]
         if "interval_minutes" in data:
             try:
-                _config["interval_minutes"] = max(5, int(data["interval_minutes"]))
+                _config["interval_minutes"] = min(1440, max(5, int(data["interval_minutes"])))
             except (TypeError, ValueError):
                 pass
-        if "volume_filter" in data:
-            _config["volume_filter"] = bool(data["volume_filter"])
-        if "trend_filter" in data:
-            _config["trend_filter"] = bool(data["trend_filter"])
+        if "volume_filter" in data and isinstance(data["volume_filter"], bool):
+            _config["volume_filter"] = data["volume_filter"]
+        if "trend_filter" in data and isinstance(data["trend_filter"], bool):
+            _config["trend_filter"] = data["trend_filter"]
         if "telegram_token" in data and isinstance(data["telegram_token"], str):
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
             _config["telegram_chat"] = data["telegram_chat"].strip()
         if "signal_filter" in data and data["signal_filter"] in ("both", "bullish", "bearish"):
             _config["signal_filter"] = data["signal_filter"]
-    _save_config()
+        saved = dict(_config)
+        saved_ok = _save_config(saved)
+    if not saved_ok:
+        return jsonify({"error": "تعذر حفظ الإعدادات"}), 500
     return jsonify(_config_payload())
 
 
 @app.route("/api/scan-now", methods=["POST"])
 def api_scan_now():
-    if _state["running"]:
-        return jsonify({"status": "فحص جارٍ بالفعل"}), 409
     data = request.get_json(force=True, silent=True) or {}
     override = {}
     if data.get("market") in ("saudi", "us"):
@@ -923,8 +1064,8 @@ def api_scan_now():
             override["sector"] = data["sector"]
     if data.get("timeframe") in EXECUTION_TIMEFRAMES:
         override["timeframe"] = data["timeframe"]
-    _stop_event.clear()
-    threading.Thread(target=run_scan, kwargs={"override": override}, daemon=True).start()
+    if not _launch_scan(override):
+        return jsonify({"status": "فحص جارٍ بالفعل"}), 409
     return jsonify({"status": "بدأ الفحص..."})
 
 
@@ -941,7 +1082,10 @@ def api_alerts():
     market = request.args.get("market")
     sector = request.args.get("sector")
     direction = request.args.get("direction")
-    limit = min(int(request.args.get("limit", 300)), 2000)
+    try:
+        limit = min(2000, max(1, int(request.args.get("limit", 300))))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit غير صالح"}), 400
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     sql = "SELECT * FROM alerts"
@@ -966,10 +1110,9 @@ def api_alerts():
 
 @app.route("/api/clear-alerts", methods=["POST"])
 def api_clear_alerts():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM alerts")
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM alerts")
+        conn.execute("DELETE FROM scan_snapshots")
     return jsonify({"status": "تم مسح التنبيهات"})
 
 

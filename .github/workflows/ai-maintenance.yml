@@ -1,0 +1,72 @@
+name: AI Maintenance Review
+
+on:
+  schedule:
+    - cron: "20 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+      - name: Check AI credential
+        id: auth
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        shell: bash
+        run: |
+          if [ -n "$COPILOT_GITHUB_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Set the COPILOT_PAT repository secret to enable AI review."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.auth.outputs.enabled == 'true'
+        with:
+          node-version: "22"
+      - name: Install Copilot CLI
+        if: steps.auth.outputs.enabled == 'true'
+        run: npm install -g @github/copilot
+      - name: Build review context
+        if: steps.auth.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          {
+            git log --oneline -10
+            echo "--- latest diff ---"
+            git diff HEAD~1 -- . ':!data/*.json'
+            echo "--- source inventory ---"
+            find . -maxdepth 3 -type f | sort
+          } > maintenance-context.txt
+      - name: AI review with Copilot CLI
+        if: steps.auth.outputs.enabled == 'true'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        shell: bash
+        run: |
+          {
+            cat .github/prompts/maintenance.txt
+            cat maintenance-context.txt
+          } > maintenance-prompt.txt
+          copilot -p "$(cat maintenance-prompt.txt)" -s --no-ask-user > ai-review.md
+      - name: Open maintenance issue
+        if: steps.auth.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          gh issue create \
+            --title "AI maintenance review $(date -u +%F)" \
+            --body-file ai-review.md \
+            --label maintenance || \
+          gh issue create \
+            --title "AI maintenance review $(date -u +%F)" \
+            --body-file ai-review.md

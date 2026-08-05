@@ -42,15 +42,20 @@ def _volume_at_break(df: pd.DataFrame, pos: int, threshold: float = 1.5):
     يرجع (ratio, passed): ratio = حجم الاختراق ÷ متوسط الحجم، passed = هل اجتاز الشرط.
     """
     if "Volume" not in df.columns:
-        return None, True
+        return None, False
     vol = df["Volume"]
     try:
         avg_vol = vol.iloc[:pos].tail(20).mean()
     except Exception:
-        return None, True
+        return None, False
     if pd.isna(avg_vol) or avg_vol <= 0:
-        return None, True
-    bar_vol = float(vol.iloc[pos])
+        return None, False
+    try:
+        bar_vol = float(vol.iloc[pos])
+    except (TypeError, ValueError):
+        return None, False
+    if not np.isfinite(bar_vol) or bar_vol < 0:
+        return None, False
     ratio = float(bar_vol / avg_vol)
     return ratio, ratio >= threshold
 
@@ -208,13 +213,12 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
     if not above_mask.any():
         return None
 
-    first_break_pos = above_mask.idxmax()
-    last_bar_idx = df.index[-1]
+    first_break_pos = info["cur_pos"] + 1 + int(np.flatnonzero(above_mask.to_numpy())[0])
     if fresh_window is None:
         fresh_window = pivot_right
-    is_fresh = bool((last_bar_idx - first_break_pos) <= fresh_window)
+    is_fresh = bool((len(df) - 1 - first_break_pos) <= fresh_window)
 
-    rsi_at_break = float(rsi.loc[first_break_pos])
+    rsi_at_break = float(rsi.iloc[first_break_pos])
     if rsi_max is not None and (rsi_at_break > rsi_max or info["rsi_low"] > rsi_max):
         return None
 
@@ -223,7 +227,7 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
         return None
 
     trend_ok = _trend_at_break(df, "bullish", first_break_pos, trend_period)
-    if trend_filter and trend_ok is False:
+    if trend_filter and trend_ok is not True:
         return None
 
     atr_val = None
@@ -236,8 +240,9 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
     return {
         "direction": "bullish",
         "fresh_breakout": is_fresh,
-        "signal_date": df.loc[first_break_pos, "Date"] if "Date" in df.columns else str(first_break_pos),
-        "price": float(close.loc[first_break_pos]),
+        "signal_date": df["Date"].iloc[first_break_pos] if "Date" in df.columns else str(first_break_pos),
+        "signal_pos": first_break_pos,
+        "price": float(close.iloc[first_break_pos]),
         "rsi_value": rsi_at_break,
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
@@ -272,13 +277,12 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
     if not below_mask.any():
         return None
 
-    first_break_pos = below_mask.idxmax()
-    last_bar_idx = df.index[-1]
+    first_break_pos = info["cur_pos"] + 1 + int(np.flatnonzero(below_mask.to_numpy())[0])
     if fresh_window is None:
         fresh_window = pivot_right
-    is_fresh = bool((last_bar_idx - first_break_pos) <= fresh_window)
+    is_fresh = bool((len(df) - 1 - first_break_pos) <= fresh_window)
 
-    rsi_at_break = float(rsi.loc[first_break_pos])
+    rsi_at_break = float(rsi.iloc[first_break_pos])
     if rsi_min is not None and (rsi_at_break < rsi_min or info["rsi_low"] < rsi_min):
         return None
 
@@ -287,7 +291,7 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
         return None
 
     trend_ok = _trend_at_break(df, "bearish", first_break_pos, trend_period)
-    if trend_filter and trend_ok is False:
+    if trend_filter and trend_ok is not True:
         return None
 
     atr_val = None
@@ -300,8 +304,9 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
     return {
         "direction": "bearish",
         "fresh_breakout": is_fresh,
-        "signal_date": df.loc[first_break_pos, "Date"] if "Date" in df.columns else str(first_break_pos),
-        "price": float(close.loc[first_break_pos]),
+        "signal_date": df["Date"].iloc[first_break_pos] if "Date" in df.columns else str(first_break_pos),
+        "signal_pos": first_break_pos,
+        "price": float(close.iloc[first_break_pos]),
         "rsi_value": rsi_at_break,
         "rsi_low": info["rsi_low"],
         "peak_level": info["neckline"],
@@ -329,7 +334,7 @@ def get_divergence_zone(df: pd.DataFrame, direction: str, rsi_period: int = 14,
 
     zone_low = float(df["Low"].iloc[idx])
     zone_high = float(df["High"].iloc[idx])
-    zone_date = df.loc[idx, "Date"] if "Date" in df.columns else str(idx)
+    zone_date = df["Date"].iloc[idx] if "Date" in df.columns else str(idx)
 
     return {"zone_low": zone_low, "zone_high": zone_high, "zone_date": zone_date}
 
@@ -351,6 +356,7 @@ def backtest_signals(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3
     df = df.tail(max_bars).reset_index(drop=True)
     min_bars = rsi_period + pivot_left + pivot_right + 5
     out = {"bullish": [], "bearish": []}
+    seen = {"bullish": set(), "bearish": set()}
     n = len(df)
     for i in range(min_bars, n):
         sl = df.iloc[: i + 1]
@@ -365,8 +371,12 @@ def backtest_signals(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3
                                               trend_filter=trend_filter)),
         )
         for direction, sig in sigs:
-            if not sig:
+            if not sig or not sig.get("fresh_breakout"):
                 continue
+            signal_pos = int(sig["signal_pos"])
+            if signal_pos in seen[direction]:
+                continue
+            seen[direction].add(signal_pos)
             entry = sig["price"]
             if pd.isna(entry) or entry <= 0:
                 continue
@@ -377,14 +387,15 @@ def backtest_signals(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3
                 "volume": round(float(sig["volume_ratio"]), 2) if sig.get("volume_ratio") is not None else None,
             }
             for h in horizons:
-                if i + h < n:
-                    rec["r%d" % h] = round((float(df["Close"].iloc[i + h]) / entry - 1) * 100, 2)
+                if signal_pos + h < n:
+                    raw_return = (float(df["Close"].iloc[signal_pos + h]) / entry - 1) * 100
+                    rec["r%d" % h] = round(raw_return if direction == "bullish" else -raw_return, 2)
             out[direction].append(rec)
 
     def _stats(rows):
         if not rows:
             return None
-        horiz = [k for k in ("r5", "r10", "r20") if any(r.get(k) is not None for r in rows)]
+        horiz = [f"r{h}" for h in horizons if any(r.get(f"r{h}") is not None for r in rows)]
         res = {"count": len(rows)}
         for h in horiz:
             vals = [r[h] for r in rows if r.get(h) is not None]

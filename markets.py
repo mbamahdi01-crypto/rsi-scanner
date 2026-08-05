@@ -80,6 +80,7 @@ US_INDICES = [
 ]
 
 _lock = threading.Lock()
+_refresh_lock = threading.Lock()
 _cache = {}
 
 
@@ -109,6 +110,9 @@ def _file_age_days(name):
 
 def refresh_lists(force=False):
     """يعيد جلب القوائم من المصادر إذا كانت قديمة. يعمل في الخلفية حتى لا يبطئ الإقلاع."""
+    if not _refresh_lock.acquire(blocking=False):
+        print("تحديث القوائم جارٍ بالفعل")
+        return False
     try:
         from build_data import (all_us_stocks, dow30, nasdaq100, russell3000,
                                 scrape_saudi, sp500)
@@ -124,19 +128,26 @@ def refresh_lists(force=False):
             if force or _file_age_days(name) > REFRESH_DAYS:
                 try:
                     n = fn(os.path.join(DATA_DIR, name))
-                    _cache.pop(name, None)
+                    with _lock:
+                        _cache.pop(name, None)
                     print(f"تحديث القائمة {name}: {n} سهم")
                 except Exception as e:
                     print(f"فشل تحديث {name}: {e}")
+        return True
     except ImportError:
         print("لا يوجد build_data.py — سيتم استخدام القوائم المخزنة فقط.")
+        return False
+    finally:
+        _refresh_lock.release()
 
 
 def start_background_refresh():
     def _run():
         import time
         time.sleep(2)
-        refresh_lists(force=False)
+        while True:
+            refresh_lists(force=False)
+            time.sleep(6 * 60 * 60)
     threading.Thread(target=_run, daemon=True).start()
 
 
@@ -160,20 +171,36 @@ def _norm_sector(sector):
     return RUSSELL_SECTOR_FIX.get(sector, sector)
 
 
+def _norm_ticker(ticker):
+    ticker = str(ticker or "").strip().upper().replace(".", "-").replace("/", "-")
+    if "$" in ticker:
+        base, preferred = ticker.split("$", 1)
+        ticker = f"{base}-P{preferred}" if base and preferred else ""
+    if ticker == "-":
+        return ""
+    return ticker
+
+
 def us_base_universe():
     """S&P 500 + ناسداك 100 + داو 30 مع القطاع."""
     out = {}
     sp = _load("sp500.json") or {"stocks": []}
     for s in sp["stocks"]:
-        out[s["ticker"]] = {"name": s.get("name", ""), "sector": _norm_sector(s.get("sector", "")), "source": "sp500"}
+        t = _norm_ticker(s["ticker"])
+        if t:
+            out[t] = {"name": s.get("name", ""), "sector": _norm_sector(s.get("sector", "")), "source": "sp500"}
     ndx = _load("nasdaq100.json") or {"stocks": []}
     for s in ndx["stocks"]:
-        t = s["ticker"]
+        t = _norm_ticker(s["ticker"])
+        if not t:
+            continue
         if t not in out:
             out[t] = {"name": s.get("name", ""), "sector": "Other", "source": "nasdaq100"}
     dow = _load("dow30.json") or {"stocks": []}
     for s in dow["stocks"]:
-        t = s["ticker"]
+        t = _norm_ticker(s["ticker"])
+        if not t:
+            continue
         if t not in out:
             out[t] = {"name": s.get("name", ""), "sector": "Other", "source": "dow30"}
     return out
@@ -184,7 +211,9 @@ def us_russell_full():
     data = _load("russell3000.json") or {"stocks": []}
     out = {}
     for s in data["stocks"]:
-        t = s["ticker"]
+        t = _norm_ticker(s["ticker"])
+        if not t:
+            continue
         out[t] = {
             "name": s.get("name", ""),
             "sector": _norm_sector(s.get("sector", "")),
@@ -199,7 +228,9 @@ def us_all_stocks():
     data = _load("us_all.json") or {"stocks": []}
     out = {}
     for s in data["stocks"]:
-        t = s["ticker"]
+        t = _norm_ticker(s["ticker"])
+        if not t:
+            continue
         out[t] = {
             "name": s.get("name", ""),
             "sector": "Other",

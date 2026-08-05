@@ -5,3 +5,8 @@ data/secret.json
 data/config.json
 alerts.db
 data/alerts.db
+data/yf_cache/
+.env
+.env.*
+*.pem
+*.key

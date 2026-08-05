@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 .git/
+data/secret.json
+data/config.json
+data/alerts.db
+data/yf_cache/
+alerts.db
+.env
+.env.*
+*.pem
+*.key

@@ -24,7 +24,7 @@
   .grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field label { font-size: 12px; color: #8a8f98; }
-  select, input[type=number] {
+  select, input[type=number], input[type=text], input[type=password] {
     background: #1a1d24; color: #e8e8e8; border: 1px solid #2a2d34;
     border-radius: 8px; padding: 9px 12px; font-size: 14px; min-width: 180px;
   }
@@ -55,8 +55,13 @@
   #status-line { font-size: 13px; color: #f6c453; margin-top: 8px; min-height: 18px; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 14px; background: #161920; border-radius: 10px; overflow: hidden; }
+  .table-panel { padding: 0; overflow-x: auto; }
+  .table-panel table { min-width: 1500px; }
   th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid #24272f; font-size: 13px; }
   th { background: #1a1d24; color: #4fd1c5; font-weight: 600; white-space: nowrap; }
+  .sort-btn { border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; padding: 0; }
+  .sort-btn:focus-visible { outline: 1px solid #4fd1c5; outline-offset: 3px; }
+  .sort-arrow { display: inline-block; min-width: 12px; color: #f6c453; }
   tr:hover { background: #1b1e26; }
   .empty { text-align: center; padding: 40px; color: #666; }
   .ticker { font-weight: bold; color: #fff; }
@@ -149,7 +154,7 @@
       </div>
       <div class="field" style="flex-basis:100%">
         <label>تنبيهات تيليجرام — توكن البوت (أنشئه من @BotFather)</label>
-        <input type="text" id="tg-token" placeholder="123456789:AAF..." style="min-width:300px">
+        <input type="password" id="tg-token" placeholder="123456789:AAF..." autocomplete="off" style="min-width:300px">
       </div>
       <div class="field">
         <label>معرف الشات (اعرفه من @userinfobot)</label>
@@ -177,7 +182,7 @@
         <h3>تغيير كلمة المرور</h3>
         <label>كلمة المرور الحالية</label>
         <input type="password" id="pwd-old" autocomplete="current-password">
-        <label>كلمة المرور الجديدة (4 أحرف على الأقل)</label>
+        <label>كلمة المرور الجديدة (8 أحرف على الأقل)</label>
         <input type="password" id="pwd-new" autocomplete="new-password">
         <label>تأكيد كلمة المرور الجديدة</label>
         <input type="password" id="pwd-new2" autocomplete="new-password">
@@ -201,7 +206,7 @@
     <div id="status-line"></div>
   </div>
 
-  <div class="panel" style="padding:0; overflow:hidden;">
+  <div class="panel table-panel">
     <table>
       <thead>
         <tr>
@@ -212,15 +217,15 @@
           <th>النوع</th>
           <th>فريم التنفيذ</th>
           <th>شمعة الإشارة</th>
-          <th>السعر</th>
+          <th><button class="sort-btn" type="button" onclick="sortAlerts('price')">السعر <span class="sort-arrow" id="sort-price"></span></button></th>
+          <th>وقف الخسارة</th>
+          <th>الهدف 1</th>
+          <th>الهدف 2</th>
           <th>RSI (عند الاختراق)</th>
           <th>قاع RSI (الانفراج)</th>
           <th>الرقبة المخترقة</th>
           <th>منطقة الطلب/العرض</th>
-          <th>الحجم (×المتوسط)</th>
-          <th>وقف الخسارة</th>
-          <th>الهدف 1</th>
-          <th>الهدف 2</th>
+          <th><button class="sort-btn" type="button" onclick="sortAlerts('volume_ratio')">الفوليوم (×المتوسط) <span class="sort-arrow" id="sort-volume"></span></button></th>
         </tr>
       </thead>
       <tbody id="alerts-body">
@@ -259,6 +264,7 @@
 <script>
 let meta = null;
 let currentConfig = null;
+let alertSort = { key: null, direction: 'desc' };
 
 const $ = id => document.getElementById(id);
 
@@ -267,10 +273,10 @@ async function loadMeta() {
   renderSectors();
 }
 
-function renderSectors() {
+function renderSectors(preferred) {
   const mkt = $('market').value;
   const sel = $('sector');
-  const prev = sel.value || (currentConfig && currentConfig.sector) || 'all';
+  const prev = preferred || sel.value || (currentConfig && currentConfig.sector) || 'all';
   sel.innerHTML = '';
   sel.appendChild(new Option('كل القطاعات', 'all'));
   sel.appendChild(new Option('المؤشرات', 'indices'));
@@ -285,8 +291,11 @@ function renderSectors() {
 function syncUI() {
   if (!currentConfig) return;
   if (['saudi', 'us'].includes(currentConfig.market)) $('market').value = currentConfig.market;
-  renderSectors();
+  renderSectors(currentConfig.sector);
   if (['15m', '1h', '1d', '1wk', '1mo'].includes(currentConfig.timeframe)) $('timeframe').value = currentConfig.timeframe;
+  $('map-badge').textContent =
+    `فريم التنفيذ: ${tfLabel(currentConfig.timeframe)} ← المنطقة من: ${tfLabel(currentConfig.zone_timeframe)}`;
+  $('rsi-badge').textContent = rsiLabel(currentConfig.rsi_max);
 }
 
 function currentSelection() {
@@ -345,8 +354,8 @@ async function loadStatus() {
   $('st-last').innerText = st.last_scan_at ? st.last_scan_at.replace('T', ' ').slice(0, 19) : '—';
   const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
   $('progress').style.width = pct + '%';
-  $('status-line').innerHTML = running
-    ? `السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} <b>${st.current || ''}</b> (${st.done || 0}/${st.total || 0})`
+  $('status-line').textContent = running
+    ? `السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
     : (st.last_scan_duration != null ? `آخر دورة استغرقت ${st.last_scan_duration} ثانية.` : '');
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
@@ -373,10 +382,25 @@ async function loadAlerts() {
     const sec = $('sector').value;
     const onlyCurrent = $('only-current').checked;
     const sigFilter = $('signal-filter').value;
-    let url = '/api/alerts?limit=400';
-    if (onlyCurrent) { url += `&market=${mkt}`; if (sec !== 'all') url += `&sector=${sec}`; }
-    if (sigFilter && sigFilter !== 'both') url += `&direction=${sigFilter}`;
-    const data = await (await fetch(url)).json();
+    const params = new URLSearchParams({ limit: '400' });
+    if (onlyCurrent) {
+      params.set('market', mkt);
+      if (sec !== 'all') params.set('sector', sec);
+    }
+    if (sigFilter && sigFilter !== 'both') params.set('direction', sigFilter);
+    const data = await (await fetch(`/api/alerts?${params}`)).json();
+    if (alertSort.key) {
+      data.sort((a, b) => {
+        const av = a[alertSort.key] == null ? NaN : Number(a[alertSort.key]);
+        const bv = b[alertSort.key] == null ? NaN : Number(b[alertSort.key]);
+        const aValid = Number.isFinite(av);
+        const bValid = Number.isFinite(bv);
+        if (!aValid && !bValid) return 0;
+        if (!aValid) return 1;
+        if (!bValid) return -1;
+        return alertSort.direction === 'desc' ? bv - av : av - bv;
+      });
+    }
     const body = $('alerts-body');
     if (!data.length) {
       body.innerHTML = '<tr><td colspan="16" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
@@ -387,7 +411,7 @@ async function loadAlerts() {
     const tagClass = isBullish ? 'bullish' : 'bearish';
     const tagLabel = isBullish ? 'طلب / شراء' : 'عرض / بيع';
     const zone = (a.zone_low != null && a.zone_high != null)
-      ? `${Number(a.zone_low).toFixed(2)} — ${Number(a.zone_high).toFixed(2)} <span class="muted">(${a.zone_timeframe || '—'})</span>`
+      ? `${Number(a.zone_low).toFixed(2)} — ${Number(a.zone_high).toFixed(2)} <span class="muted">(${esc(a.zone_timeframe || '—')})</span>`
       : '—';
     const sectorAr = (meta && (meta.sector_ar[a.sector] || a.sector)) || a.sector;
     const marketAr = a.market === 'saudi' ? 'تاسي' : 'أمريكا';
@@ -396,25 +420,36 @@ async function loadAlerts() {
     const t1 = a.target_1 != null ? Number(a.target_1).toFixed(2) : '—';
     const t2 = a.target_2 != null ? Number(a.target_2).toFixed(2) : '—';
     return `<tr>
-      <td class="ticker">${a.ticker}</td>
+      <td class="ticker">${esc(a.ticker)}</td>
       <td class="name">${esc(a.name || '')}</td>
       <td>${marketAr}</td>
       <td class="muted">${esc(sectorAr)}</td>
       <td><span class="tag ${tagClass}">${tagLabel}</span></td>
-      <td>${a.timeframe}</td>
-      <td>${a.signal_date}</td>
+      <td>${esc(a.timeframe)}</td>
+      <td>${esc(a.signal_date)}</td>
       <td>${Number(a.price).toFixed(2)}</td>
+      <td>${stop}</td>
+      <td>${t1}</td>
+      <td>${t2}</td>
       <td>${Number(a.rsi_value).toFixed(2)}</td>
       <td class="muted">${a.rsi_low != null ? Number(a.rsi_low).toFixed(2) : '—'}</td>
       <td>${Number(a.peak_level).toFixed(2)}</td>
       <td>${zone}</td>
       <td class="muted">${vol}</td>
-      <td>${stop}</td>
-      <td>${t1}</td>
-      <td>${t2}</td>
     </tr>`;
   }).join('');
   } catch (e) { /* تجاهل — سيعاد المحاولة في الدورة القادمة */ }
+}
+
+function sortAlerts(key) {
+  if (alertSort.key === key) {
+    alertSort.direction = alertSort.direction === 'desc' ? 'asc' : 'desc';
+  } else {
+    alertSort = { key, direction: 'desc' };
+  }
+  $('sort-price').textContent = alertSort.key === 'price' ? (alertSort.direction === 'desc' ? '▼' : '▲') : '';
+  $('sort-volume').textContent = alertSort.key === 'volume_ratio' ? (alertSort.direction === 'desc' ? '▼' : '▲') : '';
+  loadAlerts();
 }
 
 function esc(s) {
@@ -424,7 +459,12 @@ function esc(s) {
 }
 
 async function scanNow() {
-  try { await saveConfig(); } catch (e) { /* لا نوقف الفحص إذا فشل حفظ الإعدادات */ }
+  try {
+    await saveConfig();
+  } catch (e) {
+    $('status-line').textContent = 'تعذر حفظ الإعدادات؛ لم يبدأ الفحص.';
+    return;
+  }
   const sel = currentSelection();
   $('status-line').innerHTML = `بدأ فحص ${sel.market === 'us' ? 'الأمريكي' : 'السعودي'} / ${secLabel(sel.sector)}...`;
   try {
@@ -610,7 +650,6 @@ $('only-current').addEventListener('change', loadAlerts);
   }
   try { await loadStatus(); } catch (e) {}
   syncUI();
-  try { await saveConfig(); } catch (e) {}
   loadAlerts();
 })();
 

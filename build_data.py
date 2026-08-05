@@ -7,8 +7,34 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import lxml.html
 
-BASE = r"C:\Users\iMac\Desktop\مستكه\data"
+BASE = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
 os.makedirs(BASE, exist_ok=True)
+
+
+def _normalize_ticker(value):
+    ticker = str(value or "").strip().upper().replace(".", "-").replace("/", "-")
+    if "$" in ticker:
+        base, preferred = ticker.split("$", 1)
+        ticker = f"{base}-P{preferred}" if base and preferred else ""
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]*", ticker) or ticker == "-":
+        return ""
+    return ticker
+
+
+def _atomic_dump(path, payload, min_count):
+    count = len(payload.get("stocks") or [])
+    if count < min_count:
+        raise ValueError(f"رفض تحديث غير مكتمل: {count} < {min_count}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return count
 
 
 def _get(url, timeout=60):
@@ -93,10 +119,10 @@ def scrape_saudi(path):
     for r in records:
         seen[r["ticker"]] = r
     records = sorted(seen.values(), key=lambda x: int(x["code"]))
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "tadawulallshareindex.com/en/all-shares-codes", "count": len(records),
-                   "stocks": records}, f, ensure_ascii=False, indent=1)
-    return len(records)
+    return _atomic_dump(path, {
+        "source": "tadawulallshareindex.com/en/all-shares-codes",
+        "count": len(records), "stocks": records,
+    }, 200)
 
 
 def sp500(path):
@@ -107,16 +133,19 @@ def sp500(path):
         sym = r.get("symbol", "")
         if not sym:
             continue
+        ticker = _normalize_ticker(sym)
+        if not ticker:
+            continue
         out.append({
-            "ticker": sym.replace(".", "-").replace("/", "-"),
+            "ticker": ticker,
             "name": r.get("security", ""),
             "sector": r.get("gics sector", ""),
             "sub_industry": r.get("gics sub-industry", ""),
         })
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "wikipedia:List_of_S&P_500_companies", "count": len(out), "stocks": out}, f,
-                  ensure_ascii=False, indent=1)
-    return len(out)
+    return _atomic_dump(path, {
+        "source": "wikipedia:List_of_S&P_500_companies",
+        "count": len(out), "stocks": out,
+    }, 450)
 
 
 def nasdaq100(path):
@@ -132,15 +161,18 @@ def nasdaq100(path):
         ticker = str(r.get("ticker", "")).strip()
         if not ticker:
             continue
+        ticker = _normalize_ticker(ticker)
+        if not ticker:
+            continue
         out.append({
-            "ticker": ticker.replace(".", "-").replace("/", "-"),
+            "ticker": ticker,
             "name": str(r.get("company", "")).strip(),
             "sector": str(r.get("gics_sector", "")).strip() or str(r.get("sector", "")).strip(),
         })
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "github:Gary-Strauss/nasdaq100-scraper", "count": len(out), "stocks": out}, f,
-                  ensure_ascii=False, indent=1)
-    return len(out)
+    return _atomic_dump(path, {
+        "source": "github:Gary-Strauss/nasdaq100-scraper",
+        "count": len(out), "stocks": out,
+    }, 90)
 
 
 def dow30(path):
@@ -161,12 +193,15 @@ def dow30(path):
         sym = r.get("symbol", "")
         if not sym:
             continue
-        out.append({"ticker": sym.replace(".", "-").replace("/", "-"),
+        ticker = _normalize_ticker(sym)
+        if not ticker:
+            continue
+        out.append({"ticker": ticker,
                     "name": r.get("company", "") or r.get("name", "")})
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "wikipedia:Dow_Jones_Industrial_Average", "count": len(out), "stocks": out}, f,
-                  ensure_ascii=False, indent=1)
-    return len(out)
+    return _atomic_dump(path, {
+        "source": "wikipedia:Dow_Jones_Industrial_Average",
+        "count": len(out), "stocks": out,
+    }, 25)
 
 
 def russell1000(path):
@@ -182,16 +217,19 @@ def russell1000(path):
             weight = float(w)
         except ValueError:
             weight = 0.0
+        ticker = _normalize_ticker(r["Ticker"])
+        if not ticker:
+            continue
         rows.append({
-            "ticker": str(r["Ticker"]).strip().replace(".", "-").replace("/", "-"),
+            "ticker": ticker,
             "name": str(r["Name"]).strip(),
             "sector": str(r["Sector"]).strip(),
             "weight": weight,
         })
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "blackrock iShares Russell 1000 ETF holdings", "count": len(rows), "stocks": rows}, f,
-                  ensure_ascii=False, indent=1)
-    return len(rows)
+    return _atomic_dump(path, {
+        "source": "blackrock iShares Russell 1000 ETF holdings",
+        "count": len(rows), "stocks": rows,
+    }, 800)
 
 
 def russell3000(path):
@@ -207,16 +245,19 @@ def russell3000(path):
             weight = float(w)
         except ValueError:
             weight = 0.0
+        ticker = _normalize_ticker(r["Ticker"])
+        if not ticker:
+            continue
         rows.append({
-            "ticker": str(r["Ticker"]).strip().replace(".", "-").replace("/", "-"),
+            "ticker": ticker,
             "name": str(r["Name"]).strip(),
             "sector": str(r["Sector"]).strip(),
             "weight": weight,
         })
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "blackrock iShares Russell 3000 ETF (IWV) holdings", "count": len(rows), "stocks": rows}, f,
-                  ensure_ascii=False, indent=1)
-    return len(rows)
+    return _atomic_dump(path, {
+        "source": "blackrock iShares Russell 3000 ETF (IWV) holdings",
+        "count": len(rows), "stocks": rows,
+    }, 2000)
 
 
 def all_us_stocks(path):
@@ -254,16 +295,16 @@ def all_us_stocks(path):
                 continue
             if re.search(r"(?i)\b(warrants?|rights?|units?|when issued)\b", name):
                 continue
-            ticker = sym.replace(".", "-").replace("/", "-")
+            ticker = _normalize_ticker(sym)
             if not ticker:
                 continue
             if ticker not in seen:
                 seen[ticker] = {"ticker": ticker, "name": name, "source": src_name}
     rows = sorted(seen.values(), key=lambda r: r["ticker"])
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"source": "nasdaqtrader.com/dynamic/symdir", "count": len(rows), "stocks": rows},
-                  f, ensure_ascii=False, indent=1)
-    return len(rows)
+    return _atomic_dump(path, {
+        "source": "nasdaqtrader.com/dynamic/symdir",
+        "count": len(rows), "stocks": rows,
+    }, 5000)
 
 
 if __name__ == "__main__":
