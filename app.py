@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-results-20260806-8"
+UI_VERSION = "strategy-results-20260806-9"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -128,6 +128,8 @@ TRIPLE_FETCH_WORKERS = 32   # المصدر الكبير (5 سنوات) حساس 
 ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
+TRIPLE_BUDGET_SECONDS = 240 # الثلاثي أثقل: مصدر كبير (5 سنوات) يُعاد تجميعه — يحتاج
+                            # وقتاً أطول من فحص RSI، ولا يوجد حد منصة على مدة الخيط الخلفي.
 # ================================================================
 
 MARKET_AR = {"saudi": "السوق السعودي (تاسي)", "us": "السوق الأمريكي"}
@@ -1477,7 +1479,7 @@ def run_scan_triple(override=None, claimed=False):
     if not claimed and not _claim_scan():
         return
     started = time.monotonic()
-    _deadline = started + SCAN_BUDGET_SECONDS
+    _deadline = started + TRIPLE_BUDGET_SECONDS
     try:
         with _cfg_lock:
             cfg = dict(_config)
@@ -1515,8 +1517,9 @@ def run_scan_triple(override=None, claimed=False):
         tickers = [t for t, _ in items]
 
         # جلب البيانات: فريم مصدر واحد لكل سهم يُنزَّل ثم يُعاد تجميعه إلى
-        # الفريمات الثلاثة، بميزانية تقارب كامل مدة الفحص (التحليل سريع جداً).
-        fetch_deadline = min(_deadline - 4, time.monotonic() + SCAN_BUDGET_SECONDS * 0.92)
+        # الفريمات الثلاثة. الميزانية مطلقة من بداية الفحص ولا تتأثر بتأخير
+        # التهيئة أو تنافس الخيوط بعد انتهاء فحص RSI مباشرة.
+        fetch_deadline = _deadline - 8
         triple_sources = [src for _, src, _ in TRIPLE_SOURCE_MAP.get(
             execution_tf, TRIPLE_SOURCE_MAP["1d"])]
         triple_sources = list(dict.fromkeys(triple_sources))
@@ -1527,6 +1530,8 @@ def run_scan_triple(override=None, claimed=False):
         with _state_lock:
             _state["phase"] = "تحليل الفلتر الثلاثي"
             _state["stale"] = len(stale_symbols)
+        print(f"جلب البيانات الثلاثي في {time.monotonic() - started:.1f} ث "
+              f"| نجح: {len(data_large)} / {len(tickers)}")
 
         price_min = cfg.get("price_min")
         price_max = cfg.get("price_max")
