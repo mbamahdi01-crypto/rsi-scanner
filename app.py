@@ -47,6 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+UI_VERSION = "strategy-tabs-20260806-1"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -326,6 +327,15 @@ def _guard():
     if p == "/" or not p.startswith("/api/"):
         return render_template("login.html")
     return jsonify({"error": "unauthorized"}), 401
+
+
+@app.after_request
+def _disable_page_cache(response):
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 # ==================== قاعدة البيانات ====================
@@ -1525,7 +1535,10 @@ def logout():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"ok": True, "engine": "chart-v4", "workers": YF_WORKERS})
+    return jsonify({
+        "ok": True, "engine": "chart-v4", "workers": YF_WORKERS,
+        "ui_version": UI_VERSION, "strategy_switch": True,
+    })
 
 
 @app.route("/api/login", methods=["POST"])
