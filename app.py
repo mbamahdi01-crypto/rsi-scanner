@@ -78,18 +78,18 @@ TIMEFRAME_MAP = {   # فريم التنفيذ ← فريم منطقة الطلب
 DEFAULT_ZONE_TIMEFRAME = "1d"
 
 TRIPLE_FILTER_MAP = {
-    "1d": ("1mo", "1wk", "1d"),
+    "1d": ("1wk", "1d", "1d"),
     "1h": ("1wk", "1d", "1h"),
     "15m": ("1d", "1h", "15m"),
 }
 
 # الفلتر الثلاثي يجلب فريم "المصدر" الأفضل مرة واحدة لكل سهم ثم يعيد تجميعه
 # (resample) إلى الفريمات الثلاثة — فيبقى عدد الطلبات مساوياً لفحص RSI العادي
-# (طلبا واحداً لكل سهم في معظم الحالات) وهو ما يتناسب مع مهلة الدقيقة على Render.
+# (طلبا واحدا لكل سهم في معظم الحالات) وهو ما يتناسب مع مهلة الدقيقة على Render.
 TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم الهدف، المصدر، قاعدة إعادة التجميع)
     "1d": [
-        ("1mo", "1d", "1ME"),
         ("1wk", "1d", "1W"),
+        ("1d", "1d", None),
         ("1d", "1d", None),
     ],
     "1h": [
@@ -103,7 +103,7 @@ TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم ال�
         ("15m", "15m", None),
     ],
 }
-TRIPLE_SOURCE_LOOKBACK = {"1d": "5y", "1h": "730d", "15m": "60d"}
+TRIPLE_SOURCE_LOOKBACK = {"1d": "2y", "1h": "730d", "15m": "60d"}
 
 RSI_PERIOD = 14
 ATR_PERIOD = 14
@@ -124,7 +124,7 @@ CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 YF_WORKERS = 64           # النقطة المثبتة: 64 عاملاً أعطت 67/67 في 5.2 ثانية
 ZONE_FETCH_WORKERS = 12
 YF_REQUEST_TIMEOUT = 5    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
-TRIPLE_FETCH_WORKERS = 32   # المصدر الكبير (5 سنوات) حساس للازدحام عند Yahoo
+TRIPLE_FETCH_WORKERS = 32   # المصدر (سنتان) يُعاد تجميعه إلى الفريمات — حساس للازدحام عند Yahoo
 ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
@@ -1077,7 +1077,7 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
             if any(source_stale.get(src) for _, src, _ in targets):
                 for frame in frames.values():
                     frame.attrs["cache_stale"] = True
-            if len(frames) == 3:
+            if all(target in frames for target, _, _ in targets):
                 with results_lock:
                     for target, frame in frames.items():
                         data[target][ticker] = frame
