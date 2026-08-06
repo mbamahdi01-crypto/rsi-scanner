@@ -78,36 +78,29 @@ TIMEFRAME_MAP = {   # فريم التنفيذ ← فريم منطقة الطلب
 DEFAULT_ZONE_TIMEFRAME = "1d"
 
 TRIPLE_FILTER_MAP = {
-    "1d": ("1wk", "1d", "1h"),
-    "1h": ("1wk", "1d", "1h"),
-    "15m": ("1d", "1h", "15m"),
+    "1d": ("1wk", "1d"),
+    "1h": ("1wk", "1d"),
+    "15m": ("1d", "1h"),
 }
 
 # الفلتر الثلاثي يجلب فريم "المصدر" الأفضل مرة واحدة لكل سهم ثم يعيد تجميعه
-# (resample) إلى الفريمات الثلاثة — فيبقى عدد الطلبات مساوياً لفحص RSI العادي
-# (طلبا واحدا لكل سهم في معظم الحالات) وهو ما يتناسب مع مهلة الدقيقة على Render.
+# (resample) إلى الفريمين المطلوبين — فيبقى عدد الطلبات طلباً واحداً لكل سهم
+# في معظم الحالات وهو ما يتناسب مع المهلة على Render.
 TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم الهدف، المصدر، قاعدة إعادة التجميع)
     "1d": [
         ("1wk", "1d", "1W"),
         ("1d", "1d", None),
-        ("1h", "1h", None),
     ],
     "1h": [
         ("1wk", "1h", "1W"),
         ("1d", "1h", "1D"),
-        ("1h", "1h", None),
     ],
     "15m": [
         ("1d", "1d", None),
         ("1h", "15m", "1h"),
-        ("15m", "15m", None),
     ],
 }
 TRIPLE_SOURCE_LOOKBACK = {"1d": "2y", "1h": "730d", "15m": "60d"}
-
-# الفريم الهدف ← فريم بديل إن تعذّر مصدره. مثال: إن غابت بيانات الساعة (1h)
-# لسهمٍ ما على ياهو، يُستخدم فريم الوسط (اليومي) كفريم صغير بديلاً عنه.
-TRIPLE_SMALL_FALLBACK = {"1h": "1d", "15m": "1h"}
 
 RSI_PERIOD = 14
 ATR_PERIOD = 14
@@ -125,12 +118,13 @@ YF_NATIVE_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h",
                        "1d", "5d", "1wk", "1mo", "3mo"}
 CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 
-YF_WORKERS = 64           # النقطة المثبتة: 64 عاملاً أعطت 67/67 في 5.2 ثانية
-ZONE_FETCH_WORKERS = 12
+YF_WORKERS = int(os.environ.get("YF_WORKERS", "64"))
+ZONE_FETCH_WORKERS = int(os.environ.get("ZONE_FETCH_WORKERS", "12"))
 YF_REQUEST_TIMEOUT = 5    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
-TRIPLE_FETCH_WORKERS = 32   # المصدر (سنتان) يُعاد تجميعه إلى الفريمات — حساس للازدحام عند Yahoo
-ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
-SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
+TRIPLE_FETCH_WORKERS = int(os.environ.get("TRIPLE_FETCH_WORKERS", "32"))
+ANALYSIS_WORKERS = int(os.environ.get("ANALYSIS_WORKERS", "24"))
+YF_MEM_CACHE_MAX = int(os.environ.get("YF_MEM_CACHE_MAX", "1500"))
+SCAN_INTERVAL_DEFAULT = 30  # قيمة افتراضية محفوظة لأغراض التوافق فقط
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
 TRIPLE_BUDGET_SECONDS = 300 # الثلاثي أثقل: مصدران (يومي سنتان + ساعة 730 يوماً) يُعاد
                             # تجميعهما إلى الفريمات الثلاثة، ولا يوجد حد منصة على
@@ -145,7 +139,7 @@ DEFAULTS = {
     "timeframe": "1d",
     "filter_type": "rsi",
     "rsi_max": 50,          # تنبيه الشراء فقط عندما يكون RSI (عند الاختراق وعند القاع) <= هذه القيمة
-    "auto": True,
+    "auto": False,          # الفحص يدوي بالكامل: يُشغَّل بضغطة "فحص الآن" فقط
     "interval_minutes": SCAN_INTERVAL_DEFAULT,
     "volume_filter": False,     # اشتراط حجم شمعة الاختراق >= 1.5 × متوسط آخر 20 شمعة
     "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
@@ -213,6 +207,7 @@ def _load_config():
         pass
     if cfg.get("filter_type") == "triple" and cfg["timeframe"] not in TRIPLE_FILTER_MAP:
         cfg["timeframe"] = "1d"
+    cfg["auto"] = False
     return cfg
 
 
@@ -631,10 +626,44 @@ def _start_cache_writer():
                          daemon=True).start()
 
 
+# طبقة كاش بالذاكرة (قبل الكاش القرصي): تمنع إعادة قراءة آلاف ملفات CSV في كل
+# فحص، وتُحفظ فيها البيانات الممتدة بصلاحية المتصفح نفسه. سقف محدد لئلا تتضخم
+# الذاكرة على خطة Render المجانية (512MB).
+_mem_cache = {}
+_mem_cache_lock = threading.Lock()
+
+
+def _mem_cache_get(ticker, interval, base_dir, max_age):
+    key = (str(ticker), str(interval), base_dir)
+    with _mem_cache_lock:
+        entry = _mem_cache.get(key)
+        if entry is None:
+            return None
+        ts, df = entry
+        if time.time() - ts > max_age:
+            _mem_cache.pop(key, None)
+            return None
+        return df
+
+
+def _mem_cache_set(ticker, interval, base_dir, df, ts=None):
+    key = (str(ticker), str(interval), base_dir)
+    with _mem_cache_lock:
+        if len(_mem_cache) >= YF_MEM_CACHE_MAX:
+            try:
+                _mem_cache.pop(next(iter(_mem_cache)))
+            except (StopIteration, KeyError):
+                pass
+        _mem_cache[key] = (time.time() if ts is None else ts, df)
+
+
 def _read_cache(ticker, interval, max_age=None, base_dir=None):
+    max_age = _cache_ttl(interval) if max_age is None else max_age
+    mem = _mem_cache_get(ticker, interval, base_dir, max_age)
+    if mem is not None:
+        return mem
     try:
         p = _cache_path(ticker, interval, base_dir)
-        max_age = _cache_ttl(interval) if max_age is None else max_age
         if not os.path.exists(p) or time.time() - os.path.getmtime(p) > max_age:
             return None
         df = pd.read_csv(p)
@@ -644,7 +673,9 @@ def _read_cache(ticker, interval, max_age=None, base_dir=None):
         if c is None:
             return None
         df[c] = pd.to_datetime(df[c])
-        return df.set_index(c)
+        df = df.set_index(c)
+        _mem_cache_set(ticker, interval, base_dir, df, ts=os.path.getmtime(p))
+        return df
     except Exception:
         return None
 
@@ -654,6 +685,7 @@ def _write_cache(ticker, interval, df, base_dir=None):
         _cache_write_queue.put_nowait((ticker, interval, df, base_dir))
     except queue.Full:
         pass
+    _mem_cache_set(ticker, interval, base_dir, df)
 
 
 _YF_USER_AGENT = (
@@ -670,7 +702,7 @@ def _session():
     s = getattr(_local, "sess", None)
     if s is None:
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=16, pool_maxsize=32, max_retries=0)
+            pool_connections=64, pool_maxsize=128, max_retries=0)
         s = requests.Session()
         s.headers["User-Agent"] = _YF_USER_AGENT
         s.headers["Accept"] = "application/json"
@@ -761,7 +793,6 @@ def _download_one(ticker, lookback, base_interval, deadline=None):
         "range": lookback,
         "interval": base_interval,
         "includePrePost": "false",
-        "events": "div,splits",
     })
     last_error = None
     hosts = ("query1.finance.yahoo.com", "query2.finance.yahoo.com",
@@ -1001,20 +1032,17 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
     """يجلب فريمات الفلتر الثلاثي بطريقة "مصدر واحد لكل سهم".
 
     لكل فريم تنفيذ نحدد فريم المصدر الذي يُنزَّل مرة واحدة لكل سهم (مثال: لتنفيذ
-    يومي ننزّل اليومي (سنتان) والساعة (730 يوماً) ثم نعيد التجميع إلى الفريمات
-    الثلاثة، مع بديل للفريم الصغير إن تعذّر مصدره). هكذا يبقى عدد الطلبات محدوداً
-    فيتناسب الفحص مع المهلة على Render.
-    يرجع (data_large, data_medium, data_small, stale_symbols, fallback_small).
+    يومي ننزّل اليومي (سنتان) ثم نعيد تجميعه إلى أسبوعي ويومي). هكذا يبقى عدد
+    الطلبات محدوداً فيتناسب الفحص مع المهلة على Render.
+    يرجع (data_large, data_medium, stale_symbols).
     """
     if deadline is None:
         deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     targets = TRIPLE_SOURCE_MAP.get(execution_tf, TRIPLE_SOURCE_MAP["1d"])
-    large_tf, medium_tf, small_tf = TRIPLE_FILTER_MAP.get(
-        execution_tf, ("1mo", "1wk", "1d"))
+    large_tf, medium_tf = TRIPLE_FILTER_MAP.get(execution_tf, ("1wk", "1d"))
     sources = list(dict.fromkeys(src for _, src, _ in targets))
-    data = {large_tf: {}, medium_tf: {}, small_tf: {}}
+    data = {t: {} for t, _, _ in targets}
     stale_symbols = set()
-    fallback_small = set()
     stale_lock = threading.Lock()
     results_lock = threading.Lock()
     failure_log = []
@@ -1064,27 +1092,16 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                     return
                 df, stale = _load_source(ticker, source)
                 if df is None:
-                    continue
+                    return
                 if stale:
                     with stale_lock:
                         stale_symbols.add(ticker)
                 source_data[source] = df
                 source_stale[source] = stale
-            if not source_data:
-                return
             frames = {}
-            used_fallback = False
             for target, source, rule in targets:
-                src_df = source_data.get(source)
-                if src_df is None:
-                    fb = TRIPLE_SMALL_FALLBACK.get(target)
-                    if fb is None or frames.get(fb) is None:
-                        return
-                    frames[target] = frames[fb]
-                    used_fallback = True
-                    continue
                 try:
-                    frames[target] = _extract_ticker(src_df, ticker, rule, tail)
+                    frames[target] = _extract_ticker(source_data[source], ticker, rule, tail)
                 except Exception as e:
                     _diag_note(ticker, f"resample-error target={target} rule={rule}: "
                                f"{type(e).__name__}: {e}")
@@ -1099,9 +1116,6 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                 with results_lock:
                     for target, frame in frames.items():
                         data[target][ticker] = frame
-                if used_fallback:
-                    with results_lock:
-                        fallback_small.add(ticker)
         except Exception as e:
             _diag_note(ticker, f"fetch-crash: {type(e).__name__}: {e}")
 
@@ -1165,7 +1179,7 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                     pass
         finally:
             rp.shutdown(wait=False, cancel_futures=True)
-    return data[large_tf], data[medium_tf], data[small_tf], stale_symbols, sorted(fallback_small)
+    return data[large_tf], data[medium_tf], stale_symbols
 
 
 def zone_timeframe_for(execution_tf: str) -> str:
@@ -1245,13 +1259,10 @@ def telegram_alert_message(a):
     if is_triple:
         lg = a.get("large_timeframe") or {}
         md = a.get("medium_timeframe") or {}
-        sm = a.get("small_timeframe") or {}
         lines.append(f"--- الفريم الكبير ({a.get('large_tf', '—')}) ---")
         lines.append(f"MACD: {lg.get('macd')} | Signal: {lg.get('macd_signal')} | SMA20: {lg.get('sma20')}")
         lines.append(f"--- الفريم الوسط ({a.get('medium_tf', '—')}) ---")
         lines.append(f"RSI: {md.get('rsi')} | SMA50: {md.get('sma50')}")
-        lines.append(f"--- الفريم الصغير ({a.get('small_tf', '—')}) ---")
-        lines.append(f"Stoch %K: {sm.get('stoch_k')} | %D: {sm.get('stoch_d')}")
     else:
         lines.append(f"RSI عند الاختراق: {round(a['rsi_value'], 2)}")
         if a.get("rsi_low") is not None:
@@ -1526,9 +1537,8 @@ def run_scan_triple(override=None, claimed=False):
             cfg.update(override)
         universe = build_universe(cfg["market"], cfg["sector"])
         execution_tf = cfg["timeframe"]
-        large_tf, medium_tf, small_tf = TRIPLE_FILTER_MAP.get(
-            execution_tf, ("1mo", "1wk", "1d"))
-        min_bars_small = 40
+        large_tf, medium_tf = TRIPLE_FILTER_MAP.get(
+            execution_tf, ("1wk", "1d"))
     except Exception as e:
         print(f"تعذر تهيئة الفحص الثلاثي: {e}")
         with _state_lock:
@@ -1537,17 +1547,16 @@ def run_scan_triple(override=None, claimed=False):
 
     with _state_lock:
         _state.update({
-            "running": True, "phase": "جلب البيانات (3 فريمات)", "total": len(universe),
+            "running": True, "phase": "جلب البيانات (فريمين)", "total": len(universe),
             "done": 0, "current": "", "bullish": 0, "bearish": 0, "errors": 0,
             "missing": 0, "stale": 0, "timed_out": False,
-            "no_hourly": [], "no_hourly_count": 0,
             "universe_count": len(universe),
             "market": cfg["market"], "sector": cfg["sector"], "strategy": "triple",
         })
 
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص ثلاثي {len(universe)} "
           f"| {MARKET_AR.get(cfg['market'], cfg['market'])} / {cfg['sector']} "
-          f"| الفريمات: {large_tf} ← {medium_tf} ← {small_tf}")
+          f"| الفريمات: {large_tf} ← {medium_tf}")
 
     scan_failed = False
     budget_exhausted = False
@@ -1557,26 +1566,19 @@ def run_scan_triple(override=None, claimed=False):
         tickers = [t for t, _ in items]
 
         # جلب البيانات: فريم مصدر واحد لكل سهم يُنزَّل ثم يُعاد تجميعه إلى
-        # الفريمات الثلاثة. الميزانية مطلقة من بداية الفحص ولا تتأثر بتأخير
+        # الفريمين المطلوبين. الميزانية مطلقة من بداية الفحص ولا تتأثر بتأخير
         # التهيئة أو تنافس الخيوط بعد انتهاء فحص RSI مباشرة.
         fetch_deadline = _deadline - 8
         triple_sources = [src for _, src, _ in TRIPLE_SOURCE_MAP.get(
             execution_tf, TRIPLE_SOURCE_MAP["1d"])]
         triple_sources = list(dict.fromkeys(triple_sources))
         with _state_lock:
-            _state["phase"] = f"جلب بيانات {large_tf}←{medium_tf}←{small_tf}"
-        data_large, data_medium, data_small, stale_symbols, fallback_small = fetch_triple_batch(
+            _state["phase"] = f"جلب بيانات {large_tf}←{medium_tf}"
+        data_large, data_medium, stale_symbols = fetch_triple_batch(
             tickers, execution_tf, tail=400, deadline=fetch_deadline)
         with _state_lock:
             _state["phase"] = "تحليل الفلتر الثلاثي"
             _state["stale"] = len(stale_symbols)
-        no_small = [(t, ticker_meta.get(t, {}).get("name", "")) for t in fallback_small]
-        with _state_lock:
-            _state["no_hourly_count"] = len(no_small)
-            _state["no_hourly"] = [{"ticker": t, "name": n} for t, n in no_small[:12]]
-        if no_small:
-            print(f"{len(no_small)} سهماً بلا بيانات الفريم الصغير (استُخدم الفريم "
-                  f"الوسط): {', '.join(t for t, _ in no_small[:10])}")
         print(f"جلب البيانات الثلاثي في {time.monotonic() - started:.1f} ث "
               f"| نجح: {len(data_large)} / {len(tickers)}")
 
@@ -1584,18 +1586,17 @@ def run_scan_triple(override=None, claimed=False):
         price_max = cfg.get("price_max")
 
         def _analyze_one(t, meta):
-            if time.monotonic() >= _deadline:
-                return [], (0, 0, True)
+            if _stop_event.is_set() or time.monotonic() >= _deadline:
+                return [], (0, 0, False)
             df_l = data_large.get(t)
             df_m = data_medium.get(t)
-            df_s = data_small.get(t)
-            if (df_l is None or df_m is None or df_s is None
-                    or len(df_l) < 60 or len(df_m) < 60 or len(df_s) < min_bars_small):
+            if (df_l is None or df_m is None
+                    or len(df_l) < 60 or len(df_m) < 60):
                 return [], (0, 0, True)
-            if any(df.attrs.get("cache_stale") for df in (df_l, df_m, df_s)):
+            if any(df.attrs.get("cache_stale") for df in (df_l, df_m)):
                 return [], (0, 0, False)
             try:
-                result = detect_triple_filter(df_l, df_m, df_s)
+                result = detect_triple_filter(df_l, df_m)
                 if not result or not result.get("fresh_breakout"):
                     return [], (0, 0, False)
                 p = result["price"]
@@ -1616,7 +1617,7 @@ def run_scan_triple(override=None, claimed=False):
             timeout = max(0, _deadline - time.monotonic())
             done, _ = wait(futures, timeout=timeout)
             for fut in done:
-                if time.monotonic() >= _deadline:
+                if _stop_event.is_set() or time.monotonic() >= _deadline:
                     budget_exhausted = True
                     break
                 t = futures[fut]
@@ -1664,10 +1665,9 @@ def run_scan_triple(override=None, claimed=False):
                     "ticker": t, "name": meta.get("name", ""), "direction": "triple_bullish",
                     "timeframe": execution_tf, "signal_date": result["signal_date"],
                     "price": result["price"], "rsi_value": result.get("rsi_value"),
-                    "large_tf": large_tf, "medium_tf": medium_tf, "small_tf": small_tf,
+                    "large_tf": large_tf, "medium_tf": medium_tf,
                     "large_timeframe": result.get("large_timeframe"),
                     "medium_timeframe": result.get("medium_timeframe"),
-                    "small_timeframe": result.get("small_timeframe"),
                     "stop_loss": stop, "target_1": t1, "target_2": t2,
                 })
             inserted_flags = save_alerts_batch(alert_rows, deadline=_deadline)
@@ -1688,12 +1688,14 @@ def run_scan_triple(override=None, claimed=False):
                           + max(0, _state["total"] - _state["done"])
                           + (1 if budget_exhausted else 0))
             timed_out = time.monotonic() >= _deadline and missing > 0
+            cancelled = _stop_event.is_set()
             _state.update({
                 "running": False, "phase": "",
                 "last_scan_at": datetime.now().isoformat(),
                 "last_scan_duration": round(time.monotonic() - started, 1),
-                "last_scan_status": ("failed" if scan_failed else
-                                     ("partial" if missing else "completed")),
+                "last_scan_status": ("cancelled" if cancelled else
+                                     ("failed" if scan_failed else
+                                      ("partial" if missing else "completed"))),
                 "missing": missing, "timed_out": timed_out,
             })
         if missing and "tickers" in locals():
@@ -1703,28 +1705,6 @@ def run_scan_triple(override=None, claimed=False):
                                         base_dir=YF_TRIPLE_CACHE_DIR)
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص الثلاثي في {time.monotonic() - started:.1f} ث "
           f"| إشارات: {_state['bullish']}")
-
-
-def scheduler_loop():
-    while True:
-        time.sleep(10)
-        try:
-            with _cfg_lock:
-                auto = _config["auto"]
-                interval = _config["interval_minutes"]
-            with _state_lock:
-                running = _state["running"]
-                last = _state["last_scan_at"]
-            if not auto or running:
-                continue
-            overdue = True
-            if last:
-                last_dt = datetime.fromisoformat(last)
-                overdue = (datetime.now() - last_dt).total_seconds() >= interval * 60
-            if overdue:
-                _launch_scan()
-        except Exception as e:
-            print("خطأ في الجدولة:", e)
 
 
 # ==================== الواجهات ====================
@@ -1740,9 +1720,9 @@ def _config_payload():
         cfg = dict(_config)
     with _state_lock:
         st = dict(_state)
-    triple_tfs = TRIPLE_FILTER_MAP.get(cfg["timeframe"], ("1mo", "1wk", "1d"))
+    triple_tfs = TRIPLE_FILTER_MAP.get(cfg["timeframe"], ("1wk", "1d"))
     return {**cfg, "status": st, "zone_timeframe": zone_timeframe_for(cfg["timeframe"]),
-            "triple_timeframes": {"large": triple_tfs[0], "medium": triple_tfs[1], "small": triple_tfs[2]}}
+            "triple_timeframes": {"large": triple_tfs[0], "medium": triple_tfs[1]}}
 
 
 @app.route("/")
@@ -1773,8 +1753,6 @@ def index():
         sector=cfg["sector"],
         timeframe=cfg["timeframe"],
         rsi_max=cfg["rsi_max"],
-        auto=cfg["auto"],
-        interval=cfg["interval_minutes"],
         filter_type=cfg.get("filter_type", "rsi"),
         signal_filter=cfg.get("signal_filter", "both"),
     )
@@ -1858,7 +1836,6 @@ def api_meta():
         "saudi_indices": SAUDI_INDICES,
         "us_indices": US_INDICES,
         "sector_ar": {**SAUDI_SECTOR_AR, **US_SECTOR_AR},
-        "interval_default": SCAN_INTERVAL_DEFAULT,
     })
 
 
@@ -1890,12 +1867,7 @@ def api_set_config():
             elif v in (20, 30, 40, 50) or str(v) in ("20", "30", "40", "50"):
                 _config["rsi_max"] = int(v)
         if "auto" in data and isinstance(data["auto"], bool):
-            _config["auto"] = data["auto"]
-        if "interval_minutes" in data:
-            try:
-                _config["interval_minutes"] = min(1440, max(5, int(data["interval_minutes"])))
-            except (TypeError, ValueError):
-                pass
+            _config["auto"] = False
         if "volume_filter" in data and isinstance(data["volume_filter"], bool):
             _config["volume_filter"] = data["volume_filter"]
         if "trend_filter" in data and isinstance(data["trend_filter"], bool):
@@ -2126,7 +2098,6 @@ def start_services():
     _ensure_initial_password()
     _start_cache_writer()
     start_background_refresh()
-    threading.Thread(target=scheduler_loop, daemon=True).start()
     threading.Thread(target=keepalive_loop, daemon=True).start()
 
 

@@ -59,12 +59,12 @@ def calculate_stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
 
 
 def detect_triple_filter(df_large: pd.DataFrame, df_medium: pd.DataFrame,
-                         df_small: pd.DataFrame):
+                         df_small: pd.DataFrame = None):
     """
-    الفلتر الثلاثي: يفحص 3 فريمات:
+    الفلتر الثلاثي (فريمين فعالين):
     - الكبير: MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20
     - الوسط: RSI فوق 50 + السعر فوق SMA50
-    - الصغير: Stochastic (5,5,30) تقاطع صاعد
+    (الفريم الصغير/الستوكاستك أُزيل بناءً على طلب المستخدم.)
     """
     if df_large is None or len(df_large) < 60:
         return None
@@ -100,34 +100,15 @@ def detect_triple_filter(df_large: pd.DataFrame, df_medium: pd.DataFrame,
         return None
     medium_date = df_medium["Date"].iloc[last_m] if "Date" in df_medium.columns else str(last_m)
 
-    if df_small is None or len(df_small) < 40:
-        return None
-    high_s = df_small["High"]
-    low_s = df_small["Low"]
-    close_s = df_small["Close"]
-    k, d = calculate_stochastic(high_s, low_s, close_s, k_period=5, k_smooth=5, d_period=30)
-    last_s = len(df_small) - 1
-    if last_s < 1:
-        return None
-    k_now, d_now = k.iloc[last_s], d.iloc[last_s]
-    k_prev, d_prev = k.iloc[last_s - 1], d.iloc[last_s - 1]
-    if pd.isna(k_now) or pd.isna(d_now) or pd.isna(k_prev) or pd.isna(d_prev):
-        return None
-    if not ((k_prev <= d_prev) and (k_now > d_now)):
-        return None
-    small_date = df_small["Date"].iloc[last_s] if "Date" in df_small.columns else str(last_s)
-
     return {
         "direction": "triple_bullish", "fresh_breakout": True,
-        "signal_date": small_date,
-        "price": float(close_s.iloc[last_s]),
+        "signal_date": medium_date,
+        "price": float(close_m.iloc[last_m]),
         "large_timeframe": {"macd": round(float(macd_now), 4),
                             "macd_signal": round(float(signal_line.iloc[last_idx]), 4),
                             "sma20": round(float(sma20.iloc[last_idx]), 2), "date": str(large_date)},
         "medium_timeframe": {"rsi": round(rsi_val, 2),
                              "sma50": round(float(sma50.iloc[last_m]), 2), "date": str(medium_date)},
-        "small_timeframe": {"stoch_k": round(float(k_now), 2),
-                            "stoch_d": round(float(d_now), 2), "date": str(small_date)},
         "rsi_value": rsi_val, "rsi_low": None, "peak_level": None, "atr": None, "volume_ratio": None,
     }
 
