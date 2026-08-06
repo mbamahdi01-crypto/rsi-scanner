@@ -105,6 +105,8 @@ DEFAULTS = {
     "interval_minutes": SCAN_INTERVAL_DEFAULT,
     "volume_filter": False,     # اشتراط حجم شمعة الاختراق >= 1.5 × متوسط آخر 20 شمعة
     "trend_filter": False,      # فلتر الاتجاه العام (السعر مقابل المتوسط المتحرك 200)
+    "price_min": None,          # الحد الأدنى لسعر السهم في التنبيه (اختياري)
+    "price_max": None,          # الحد الأقصى لسعر السهم في التنبيه (اختياري)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
     "signal_filter": "both",    # عرض النتائج: both=الطلب والعرض معاً | bullish=مناطق الطلب فقط | bearish=مناطق العرض فقط
@@ -143,6 +145,16 @@ def _load_config():
             cfg["volume_filter"] = saved["volume_filter"]
         if isinstance(saved.get("trend_filter"), bool):
             cfg["trend_filter"] = saved["trend_filter"]
+        if "price_min" in saved and saved.get("price_min") is not None:
+            try:
+                cfg["price_min"] = float(saved["price_min"])
+            except (TypeError, ValueError):
+                cfg["price_min"] = None
+        if "price_max" in saved and saved.get("price_max") is not None:
+            try:
+                cfg["price_max"] = float(saved["price_max"])
+            except (TypeError, ValueError):
+                cfg["price_max"] = None
         if isinstance(saved.get("telegram_token"), str):
             cfg["telegram_token"] = saved["telegram_token"]
         if isinstance(saved.get("telegram_chat"), str):
@@ -419,6 +431,9 @@ def _scan_cache_key(cfg, universe):
         "timeframe": cfg["timeframe"], "rsi_max": cfg.get("rsi_max"),
         "volume_filter": bool(cfg.get("volume_filter")),
         "trend_filter": bool(cfg.get("trend_filter")),
+        "signal_filter": cfg.get("signal_filter", "both"),
+        "price_min": cfg.get("price_min"),
+        "price_max": cfg.get("price_max"),
         "universe": universe_hash,
     }
     return hashlib.sha256(json.dumps(profile, sort_keys=True).encode("utf-8")).hexdigest()
@@ -924,6 +939,16 @@ def run_scan(override=None, claimed=False):
                 for result, direction in ((bullish, "bullish"), (bearish, "bearish")):
                     if not result or not result.get("fresh_breakout"):
                         continue
+                    sig_filter = cfg.get("signal_filter", "both")
+                    if sig_filter != "both" and sig_filter != direction:
+                        continue
+                    p = result["price"]
+                    price_min = cfg.get("price_min")
+                    price_max = cfg.get("price_max")
+                    if price_min is not None and p < price_min:
+                        continue
+                    if price_max is not None and p > price_max:
+                        continue
                     if zone_tf == cfg["timeframe"]:
                         zdf = df
                     else:
@@ -1188,6 +1213,24 @@ def api_set_config():
             _config["volume_filter"] = data["volume_filter"]
         if "trend_filter" in data and isinstance(data["trend_filter"], bool):
             _config["trend_filter"] = data["trend_filter"]
+        if "price_min" in data:
+            v = data["price_min"]
+            if v is None or v == "":
+                _config["price_min"] = None
+            else:
+                try:
+                    _config["price_min"] = max(0.0, float(v))
+                except (TypeError, ValueError):
+                    pass
+        if "price_max" in data:
+            v = data["price_max"]
+            if v is None or v == "":
+                _config["price_max"] = None
+            else:
+                try:
+                    _config["price_max"] = max(0.0, float(v))
+                except (TypeError, ValueError):
+                    pass
         if "telegram_token" in data and isinstance(data["telegram_token"], str):
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):

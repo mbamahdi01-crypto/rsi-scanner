@@ -152,6 +152,14 @@
           <option value="true">مفعّل</option>
         </select>
       </div>
+      <div class="field">
+        <label>السعر من</label>
+        <input type="number" id="price-min" step="any" placeholder="مثال: 5" style="min-width:120px">
+      </div>
+      <div class="field">
+        <label>السعر إلى</label>
+        <input type="number" id="price-max" step="any" placeholder="مثال: 100" style="min-width:120px">
+      </div>
       <div class="field" style="flex-basis:100%">
         <label>تنبيهات تيليجرام — توكن البوت (أنشئه من @BotFather)</label>
         <input type="password" id="tg-token" placeholder="123456789:AAF..." autocomplete="off" style="min-width:300px">
@@ -309,6 +317,8 @@ function currentSelection() {
     interval_minutes: parseInt($('interval').value, 10) || 30,
     volume_filter: $('volume-filter').value === 'true',
     trend_filter: $('trend-filter').value === 'true',
+    price_min: $('price-min').value === '' ? null : parseFloat($('price-min').value),
+    price_max: $('price-max').value === '' ? null : parseFloat($('price-max').value),
     signal_filter: $('signal-filter').value,
     telegram_token: $('tg-token').value.trim(),
     telegram_chat: $('tg-chat').value.trim(),
@@ -371,6 +381,8 @@ async function loadStatus(syncControls = false) {
     }
     $('volume-filter').value = currentConfig.volume_filter ? 'true' : 'false';
     $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
+    $('price-min').value = currentConfig.price_min != null ? currentConfig.price_min : '';
+    $('price-max').value = currentConfig.price_max != null ? currentConfig.price_max : '';
     if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
       $('signal-filter').value = currentConfig.signal_filter;
     }
