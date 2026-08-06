@@ -93,7 +93,8 @@
     position: relative; display: flex; align-items: center; gap: 12px; width: 100%;
     padding: 14px 16px; border: 1px solid transparent; border-radius: 10px;
     background: transparent; color: #a8adb7; text-align: right; cursor: pointer;
-    font-family: inherit; transition: background .2s, border-color .2s, color .2s;
+    font-family: inherit; text-decoration: none;
+    transition: background .2s, border-color .2s, color .2s;
   }
   .strategy-tab:hover { background: #1a1d24; color: #fff; }
   .strategy-tab.active {
@@ -134,23 +135,31 @@
 
   <div class="panel">
     <div class="strategy-switch" role="tablist" aria-label="اختيار استراتيجية الفحص">
-      <button type="button" class="strategy-tab active" id="strategy-rsi" data-strategy="rsi"
-              role="tab" aria-selected="true" aria-controls="rsi-options" onclick="selectStrategy('rsi')">
+      <a href="{{ url_for('index', strategy='rsi') }}"
+         class="strategy-tab{% if filter_type == 'rsi' %} active{% endif %}" id="strategy-rsi"
+         data-strategy="rsi" role="tab" aria-selected="{{ 'true' if filter_type == 'rsi' else 'false' }}"
+         aria-controls="rsi-options">
         <span class="strategy-icon">R</span>
         <span><strong>فلتر RSI</strong><small>الانفراج واختراق القمة أو كسر القاع مع مناطق الطلب والعرض</small></span>
-      </button>
-      <button type="button" class="strategy-tab" id="strategy-triple" data-strategy="triple"
-              role="tab" aria-selected="false" aria-controls="triple-info" onclick="selectStrategy('triple')">
+      </a>
+      <a href="{{ url_for('index', strategy='triple') }}"
+         class="strategy-tab{% if filter_type == 'triple' %} active{% endif %}" id="strategy-triple"
+         data-strategy="triple" role="tab" aria-selected="{{ 'true' if filter_type == 'triple' else 'false' }}"
+         aria-controls="triple-info">
         <span class="strategy-icon">3</span>
         <span><strong>الفلتر الثلاثي</strong><small>MACD على الكبير، RSI على الوسط، وStochastic على الصغير</small></span>
-      </button>
+      </a>
     </div>
     <select id="filter-type" aria-hidden="true" tabindex="-1">
-      <option value="rsi">فلتر RSI</option>
-      <option value="triple">الفلتر الثلاثي</option>
+      <option value="rsi"{% if filter_type == 'rsi' %} selected{% endif %}>فلتر RSI</option>
+      <option value="triple"{% if filter_type == 'triple' %} selected{% endif %}>الفلتر الثلاثي</option>
     </select>
     <div class="strategy-description" id="strategy-description">
+      {% if filter_type == 'triple' %}
+      الفلتر الثلاثي: شروط الفواصل الثلاثة معاً دون شرط منطقة طلب أو عرض.
+      {% else %}
       فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.
+      {% endif %}
     </div>
     <div class="grid">
       <div class="field">
@@ -167,23 +176,23 @@
       <div class="field">
         <label>فريم التنفيذ</label>
         <select id="timeframe">
-          <option value="15m">15 دقيقة</option>
-          <option value="1h">ساعة</option>
-          <option value="1d">يومي</option>
-          <option value="1wk">أسبوعي</option>
-          <option value="1mo">شهري</option>
+          <option value="15m"{% if timeframe == '15m' %} selected{% endif %}>15 دقيقة</option>
+          <option value="1h"{% if timeframe == '1h' %} selected{% endif %}>ساعة</option>
+          <option value="1d"{% if timeframe == '1d' %} selected{% endif %}>يومي</option>
+          <option value="1wk"{% if timeframe == '1wk' %} selected{% endif %}>أسبوعي</option>
+          <option value="1mo"{% if timeframe == '1mo' %} selected{% endif %}>شهري</option>
         </select>
       </div>
       <div class="field">
         <label>المناطق المطلوبة</label>
         <select id="signal-filter">
-          <option value="none">لا شيء — بدون شرط منطقة طلب أو عرض</option>
-          <option value="both">كلاهما (الطلب والعرض)</option>
-          <option value="bullish">مناطق الطلب فقط (شراء)</option>
-          <option value="bearish">مناطق العرض فقط (بيع)</option>
+          <option value="none"{% if signal_filter == 'none' %} selected{% endif %}>لا شيء — بدون شرط منطقة طلب أو عرض</option>
+          <option value="both"{% if signal_filter == 'both' %} selected{% endif %}>كلاهما (الطلب والعرض)</option>
+          <option value="bullish"{% if signal_filter == 'bullish' %} selected{% endif %}>مناطق الطلب فقط (شراء)</option>
+          <option value="bearish"{% if signal_filter == 'bearish' %} selected{% endif %}>مناطق العرض فقط (بيع)</option>
         </select>
       </div>
-      <div id="rsi-options">
+      <div id="rsi-options"{% if filter_type != 'rsi' %} style="display:none"{% endif %}>
       <div class="field">
         <label>شرط RSI لتنبيه الشراء (السهم هبط)</label>
         <select id="rsi-max">
@@ -209,7 +218,7 @@
         </select>
       </div>
       </div>
-      <div id="triple-info" style="display:none;">
+      <div id="triple-info" style="display:{{ 'block' if filter_type == 'triple' else 'none' }};">
         <div class="field" style="flex-basis:100%">
           <label style="color:#4fd1c5;font-weight:bold;">الشروط الثلاثية (تلقائي حسب الفريم):</label>
           <div style="font-size:12px;color:#8a8f98;line-height:1.8;" id="triple-desc"></div>

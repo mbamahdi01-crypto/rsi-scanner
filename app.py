@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-tabs-20260806-2"
+UI_VERSION = "strategy-pages-20260806-3"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -1502,8 +1502,26 @@ def _config_payload():
 
 @app.route("/")
 def index():
+    requested_strategy = request.args.get("strategy")
+    changed = False
     with _cfg_lock:
+        if requested_strategy in ("rsi", "triple"):
+            if _config.get("filter_type") != requested_strategy:
+                _config["filter_type"] = requested_strategy
+                changed = True
+            if requested_strategy == "triple":
+                if _config.get("signal_filter") != "none":
+                    _config["signal_filter"] = "none"
+                    changed = True
+                if _config["timeframe"] not in TRIPLE_FILTER_MAP:
+                    _config["timeframe"] = "1d"
+                    changed = True
+            elif _config.get("signal_filter") == "none":
+                _config["signal_filter"] = "both"
+                changed = True
         cfg = dict(_config)
+    if changed:
+        _save_config(cfg)
     return render_template(
         "index.html",
         market=cfg["market"],
@@ -1512,6 +1530,8 @@ def index():
         rsi_max=cfg["rsi_max"],
         auto=cfg["auto"],
         interval=cfg["interval_minutes"],
+        filter_type=cfg.get("filter_type", "rsi"),
+        signal_filter=cfg.get("signal_filter", "both"),
     )
 
 
