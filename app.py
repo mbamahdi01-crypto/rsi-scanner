@@ -966,6 +966,17 @@ def _note_fetch_failure(ticker, interval, lookback, exc):
             print(f"فشل جلب {ticker} ({interval}/{lookback}): {type(exc).__name__}: {exc}")
 
 
+_diag_count = 0
+
+
+def _diag_note(ticker, msg):
+    global _diag_count
+    with _fetch_failure_lock:
+        _diag_count += 1
+        if _diag_count <= 12:
+            print(f"DIAG {ticker}: {msg}")
+
+
 _blank_count = 0
 
 
@@ -1017,6 +1028,8 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                 df = None
         if df is None:
             if deadline is not None and time.monotonic() >= deadline:
+                _diag_note(ticker, f"deadline-hit source={source} remaining="
+                           f"{deadline - time.monotonic():.1f}")
                 return None, False
             try:
                 raw = _download_one(ticker, lookback, source, deadline)
@@ -1024,42 +1037,50 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                 _note_fetch_failure(ticker, source, lookback, e)
                 return None, False
             if raw is None or raw.empty:
+                _diag_note(ticker, f"blank-download source={source} lookback={lookback}")
                 return None, False
             _write_cache(ticker, source, raw, base_dir=YF_TRIPLE_CACHE_DIR)
             df = raw.dropna(subset=["Open", "High", "Low", "Close"])
             if df.empty:
+                _diag_note(ticker, f"empty-after-dropna source={source}")
                 return None, False
         return df, stale
 
     def _fetch_one(ticker):
-        source_data = {}
-        source_stale = {}
-        for source in sources:
-            if deadline is not None and time.monotonic() >= deadline:
-                return
-            df, stale = _load_source(ticker, source)
-            if df is None:
-                return
-            if stale:
-                with stale_lock:
-                    stale_symbols.add(ticker)
-            source_data[source] = df
-            source_stale[source] = stale
-        frames = {}
-        for target, source, rule in targets:
-            try:
-                frames[target] = _extract_ticker(source_data[source], ticker, rule, tail)
-            except Exception:
-                return
-            if frames[target] is None:
-                return
-        if any(source_stale.get(src) for _, src, _ in targets):
-            for frame in frames.values():
-                frame.attrs["cache_stale"] = True
-        if len(frames) == 3:
-            with results_lock:
-                for target, frame in frames.items():
-                    data[target][ticker] = frame
+        try:
+            source_data = {}
+            source_stale = {}
+            for source in sources:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return
+                df, stale = _load_source(ticker, source)
+                if df is None:
+                    return
+                if stale:
+                    with stale_lock:
+                        stale_symbols.add(ticker)
+                source_data[source] = df
+                source_stale[source] = stale
+            frames = {}
+            for target, source, rule in targets:
+                try:
+                    frames[target] = _extract_ticker(source_data[source], ticker, rule, tail)
+                except Exception as e:
+                    _diag_note(ticker, f"resample-error target={target} rule={rule}: "
+                               f"{type(e).__name__}: {e}")
+                    return
+                if frames[target] is None:
+                    _diag_note(ticker, f"resample-empty target={target} rule={rule}")
+                    return
+            if any(source_stale.get(src) for _, src, _ in targets):
+                for frame in frames.values():
+                    frame.attrs["cache_stale"] = True
+            if len(frames) == 3:
+                with results_lock:
+                    for target, frame in frames.items():
+                        data[target][ticker] = frame
+        except Exception as e:
+            _diag_note(ticker, f"fetch-crash: {type(e).__name__}: {e}")
 
     tickers = list(tickers)
     workers = min(workers or TRIPLE_FETCH_WORKERS, max(1, len(tickers)))
@@ -2049,6 +2070,7 @@ def start_services():
         return
     _services_started = True
     init_db()
+    print(f"[env] pandas={pd.__version__} python-threads ok")
     _ensure_initial_password()
     _start_cache_writer()
     start_background_refresh()
