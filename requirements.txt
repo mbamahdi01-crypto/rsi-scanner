@@ -1,5 +1,5 @@
 Flask>=3.0
-gunicorn>=21.0
+gunicorn>=26.0.0
 requests>=2.31
 pandas>=2.2
 numpy>=1.26
