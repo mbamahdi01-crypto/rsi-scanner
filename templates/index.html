@@ -542,10 +542,11 @@ async function loadAlerts() {
       body.innerHTML = '<tr><td colspan="17" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
       return;
     }
-  body.innerHTML = data.map(a => {
-    const isBullish = a.direction === 'bullish';
+    body.innerHTML = data.map(a => {
+    const isTriple = a.direction === 'triple_bullish';
+    const isBullish = a.direction === 'bullish' || isTriple;
     const tagClass = isBullish ? 'bullish' : 'bearish';
-    const tagLabel = isBullish ? 'طلب / شراء' : 'عرض / بيع';
+    const tagLabel = isTriple ? 'طلب / فلتر ثلاثي' : (isBullish ? 'طلب / شراء' : 'عرض / بيع');
     const zone = (a.zone_low != null && a.zone_high != null)
       ? `${Number(a.zone_low).toFixed(2)} — ${Number(a.zone_high).toFixed(2)} <span class="muted">(${esc(a.zone_timeframe || '—')})</span>`
       : '—';
