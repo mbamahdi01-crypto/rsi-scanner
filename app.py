@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-results-20260806-4"
+UI_VERSION = "strategy-results-20260806-5"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -101,7 +101,8 @@ CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 YF_WORKERS = 64           # النقطة المثبتة: 64 عاملاً أعطت 67/67 في 5.2 ثانية
 ZONE_FETCH_WORKERS = 12
 YF_REQUEST_TIMEOUT = 5    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
-ANALYSIS_WORKERS = 12     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
+TRIPLE_FETCH_WORKERS = 96   # الفلتر الثلاثي يجلب 3 فريمات لكل سهم في مهمة واحدة
+ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
 # ================================================================
@@ -926,6 +927,113 @@ def fetch_batch(tickers, timeframe, tail=None, pool=None, deadline=None):
     return results
 
 
+def fetch_triple_batch(tickers, timeframes, tail=None, workers=None, deadline=None):
+    """يجلب الفريمات الثلاثة لكل سهم في مهمة واحدة داخل نفس الخيط.
+
+    بدلاً من تشغيل 3 موجات منفصلة (واحدة لكل فريم) كلٌّ بحصته الضيقة من الخيوط
+    والمهلة، نمر على كل رمز مرة واحدة ونجلب فريماته الثلاثة تباعاً — فيبقى عدد
+    الاتصالات محدوداً بعدد الخيوط، ويتوزع الحِمل بتوازن، ولا يستهلك فريمٌ بطيء
+    حصة الفريمات الأخرى. يرجع (data_large, data_medium, data_small, stale_symbols).
+    """
+    if deadline is None:
+        deadline = time.monotonic() + SCAN_BUDGET_SECONDS
+    large_tf, medium_tf, small_tf = timeframes
+    data = {large_tf: {}, medium_tf: {}, small_tf: {}}
+    stale_symbols = set()
+    stale_lock = threading.Lock()
+    results_lock = threading.Lock()
+
+    def _fetch_one(ticker):
+        frames = {}
+        for interval in (large_tf, medium_tf, small_tf):
+            if deadline is not None and time.monotonic() >= deadline:
+                return
+            base_interval, rule = CUSTOM_TIMEFRAMES.get(interval, (interval, None))
+            lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
+            cached = _read_cache(ticker, base_interval)
+            stale = False
+            if cached is None:
+                cached = _read_cache(ticker, base_interval,
+                                     max_age=_cache_stale_ttl(base_interval))
+                stale = cached is not None
+            df = None
+            if cached is not None:
+                try:
+                    df = _extract_ticker(cached, ticker, rule, tail)
+                except Exception:
+                    df = None
+            if df is None:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return
+                try:
+                    raw = _download_one(ticker, lookback, base_interval, deadline)
+                except Exception:
+                    return
+                if raw is None or raw.empty:
+                    continue
+                _write_cache(ticker, base_interval, raw)
+                try:
+                    df = _extract_ticker(raw, ticker, rule, tail)
+                except Exception as e:
+                    print(f"فشل تجهيز بيانات {ticker}: {e}")
+                    df = None
+                if df is None:
+                    continue
+            if stale:
+                df.attrs["cache_stale"] = True
+                with stale_lock:
+                    stale_symbols.add(ticker)
+            frames[interval] = df
+        if len(frames) == 3:
+            with results_lock:
+                for interval, frame in frames.items():
+                    data[interval][ticker] = frame
+
+    tickers = list(tickers)
+    workers = min(workers or TRIPLE_FETCH_WORKERS, max(1, len(tickers)))
+    pending = iter(tickers)
+    futs = {}
+    ex = ThreadPoolExecutor(max_workers=workers)
+    try:
+        for _ in range(workers):
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            try:
+                t = next(pending)
+            except StopIteration:
+                break
+            futs[ex.submit(_fetch_one, t)] = t
+        while futs:
+            timeout = None
+            if deadline is not None:
+                timeout = max(0, deadline - time.monotonic())
+                if timeout <= 0:
+                    break
+            done, _ = wait(futs, timeout=timeout, return_when=FIRST_COMPLETED)
+            if not done:
+                break
+            for fut in done:
+                t = futs.pop(fut)
+                try:
+                    fut.result()
+                except Exception:
+                    pass
+                if deadline is not None and time.monotonic() >= deadline:
+                    continue
+                try:
+                    nxt = next(pending)
+                except StopIteration:
+                    continue
+                futs[ex.submit(_fetch_one, nxt)] = nxt
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+    finally:
+        for fut in futs:
+            fut.cancel()
+        ex.shutdown(wait=False, cancel_futures=True)
+    return data[large_tf], data[medium_tf], data[small_tf], stale_symbols
+
+
 def zone_timeframe_for(execution_tf: str) -> str:
     return TIMEFRAME_MAP.get(execution_tf, DEFAULT_ZONE_TIMEFRAME)
 
@@ -1311,28 +1419,15 @@ def run_scan_triple(override=None, claimed=False):
     try:
         items = list(universe)
         ticker_meta = {ticker: meta for ticker, meta in items}
-
-        # جلب البيانات للفريمات الثلاثة في وقت واحد (موازاة بدلاً من التسلسل)
         tickers = [t for t, _ in items]
-        fetch_deadline = min(_deadline, time.monotonic() + SCAN_BUDGET_SECONDS * 0.55)
-        with ThreadPoolExecutor(max_workers=3) as fex:
-            future_large = fex.submit(fetch_batch, tickers, large_tf, tail=400,
-                                      pool=ZONE_FETCH_WORKERS, deadline=fetch_deadline)
-            future_medium = fex.submit(fetch_batch, tickers, medium_tf, tail=400,
-                                       pool=ZONE_FETCH_WORKERS, deadline=fetch_deadline)
-            future_small = fex.submit(fetch_batch, tickers, small_tf, tail=400,
-                                      pool=ZONE_FETCH_WORKERS, deadline=fetch_deadline)
-            data_large = future_large.result()
-            with _state_lock:
-                _state["phase"] = "جلب بيانات الفريم الوسط"
-            data_medium = future_medium.result()
-            with _state_lock:
-                _state["phase"] = "جلب بيانات الفريم الصغير"
-            data_small = future_small.result()
-        stale_symbols = {
-            ticker for data in (data_large, data_medium, data_small)
-            for ticker, frame in data.items() if frame.attrs.get("cache_stale")
-        }
+
+        # جلب البيانات للفريمات الثلاثة معاً: كل سهم يُجلب فريماته الثلاثة
+        # في مهمة واحدة، وبميزانية تقارب كامل مدة الفحص (التحليل سريع جداً).
+        fetch_deadline = min(_deadline - 4, time.monotonic() + SCAN_BUDGET_SECONDS * 0.92)
+        with _state_lock:
+            _state["phase"] = f"جلب بيانات {large_tf}←{medium_tf}←{small_tf}"
+        data_large, data_medium, data_small, stale_symbols = fetch_triple_batch(
+            tickers, (large_tf, medium_tf, small_tf), tail=400, deadline=fetch_deadline)
         with _state_lock:
             _state["phase"] = "تحليل الفلتر الثلاثي"
             _state["stale"] = len(stale_symbols)
