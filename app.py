@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-results-20260806-7"
+UI_VERSION = "strategy-results-20260806-8"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -124,7 +124,7 @@ CUSTOM_TIMEFRAMES = {"2h": ("60m", "2h")}
 YF_WORKERS = 64           # النقطة المثبتة: 64 عاملاً أعطت 67/67 في 5.2 ثانية
 ZONE_FETCH_WORKERS = 12
 YF_REQUEST_TIMEOUT = 5    # مهلة قصيرة: الأسهم الميتة تفشل سريعاً دون شلّ الفحص
-TRIPLE_FETCH_WORKERS = 64   # الفلتر الثلاثي يجلب فريم المصدر مرة واحدة لكل سهم
+TRIPLE_FETCH_WORKERS = 32   # المصدر الكبير (5 سنوات) حساس للازدحام عند Yahoo
 ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
@@ -769,10 +769,12 @@ def _download_one(ticker, lookback, base_interval, deadline=None):
             payload = _yahoo_json(host, path, deadline)
             result = (payload.get("chart", {}).get("result") or [None])[0]
             if not result:
+                _note_blank_result(ticker, base_interval, lookback, payload)
                 return None
             timestamps = result.get("timestamp") or []
             quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
             if not timestamps or not quote:
+                _note_blank_result(ticker, base_interval, lookback, payload)
                 return None
 
             def _values(name):
@@ -962,6 +964,19 @@ def _note_fetch_failure(ticker, interval, lookback, exc):
         _fetch_failure_count += 1
         if _fetch_failure_count <= 15:
             print(f"فشل جلب {ticker} ({interval}/{lookback}): {type(exc).__name__}: {exc}")
+
+
+_blank_count = 0
+
+
+def _note_blank_result(ticker, interval, lookback, payload):
+    """يسجّل أول استجابة فارغة من Yahoo مع رسالة الخطأ إن وُجدت."""
+    global _blank_count
+    with _fetch_failure_lock:
+        _blank_count += 1
+        if _blank_count <= 8:
+            err = (payload.get("chart") or {}).get("error")
+            print(f"Yahoo فارغ {ticker} ({interval}/{lookback}): error={err}")
 
 
 def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=None):
