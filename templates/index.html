@@ -412,7 +412,7 @@ function toggleFilterUI() {
 
   const tf = $('timeframe').value;
   const combos = {
-    '1d': 'أسبوعي ← يومي ← يومي',
+    '1d': 'أسبوعي ← يومي ← ساعة',
     '1h': 'أسبوعي ← يومي ← ساعة',
     '15m': 'يومي ← ساعة ← 15 دقيقة',
   };
@@ -505,7 +505,9 @@ async function loadStatus(syncControls = false) {
     ? `الاستراتيجية: ${runningStrategy} | السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
     : (st.last_scan_duration != null
       ? (st.last_scan_status === 'partial'
-        ? `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، وتعذر ${st.missing || 0} بسبب مهلة مصدر البيانات.`
+        ? (st.timed_out
+          ? `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، ووصلت مهلة الدورة قبل اكتمال ${st.missing || 0} سهماً — ستُعاد المحاولة تلقائياً.`
+          : `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، وتخطّى ${st.missing || 0} سهماً لعدم اكتمال بياناته التاريخية.`)
         : `آخر دورة استغرقت ${st.last_scan_duration} ثانية واكتملت تغطيتها${st.stale ? ` (يجري تحديث ${st.stale} لقطة احتياطية في الخلفية)` : ''}.`)
       : '');
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
