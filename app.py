@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-pages-20260806-3"
+UI_VERSION = "strategy-results-20260806-4"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -1080,7 +1080,7 @@ def run_scan(override=None, claimed=False):
             "done": 0, "current": "", "bullish": 0, "bearish": 0, "errors": 0,
             "missing": 0, "stale": 0, "timed_out": False,
             "universe_count": len(universe),
-            "market": cfg["market"], "sector": cfg["sector"],
+            "market": cfg["market"], "sector": cfg["sector"], "strategy": "rsi",
         })
 
     cache_key = _scan_cache_key(cfg, universe)
@@ -1299,7 +1299,7 @@ def run_scan_triple(override=None, claimed=False):
             "done": 0, "current": "", "bullish": 0, "bearish": 0, "errors": 0,
             "missing": 0, "stale": 0, "timed_out": False,
             "universe_count": len(universe),
-            "market": cfg["market"], "sector": cfg["sector"],
+            "market": cfg["market"], "sector": cfg["sector"], "strategy": "triple",
         })
 
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص ثلاثي {len(universe)} "
@@ -1726,6 +1726,7 @@ def api_alerts():
     market = request.args.get("market")
     sector = request.args.get("sector")
     direction = request.args.get("direction")
+    strategy = request.args.get("strategy")
     try:
         limit = min(2000, max(1, int(request.args.get("limit", 300))))
     except (TypeError, ValueError):
@@ -1740,7 +1741,20 @@ def api_alerts():
     if sector and sector != "all":
         where.append("sector=?")
         params.append(sector)
-    if direction == "bullish":
+    if strategy == "triple":
+        where.append("direction=?")
+        params.append("triple_bullish")
+    elif strategy == "rsi":
+        if direction == "bullish":
+            where.append("direction=?")
+            params.append("bullish")
+        elif direction == "bearish":
+            where.append("direction=?")
+            params.append("bearish")
+        else:
+            where.append("direction IN (?,?)")
+            params.extend(("bullish", "bearish"))
+    elif direction == "bullish":
         where.append("direction IN (?,?)")
         params.extend(("bullish", "triple_bullish"))
     elif direction == "bearish":

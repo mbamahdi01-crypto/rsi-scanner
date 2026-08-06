@@ -500,8 +500,9 @@ async function loadStatus(syncControls = false) {
   $('st-last').innerText = st.last_scan_at ? st.last_scan_at.replace('T', ' ').slice(0, 19) : '—';
   const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
   $('progress').style.width = pct + '%';
+  const runningStrategy = st.strategy === 'triple' ? 'الفلتر الثلاثي' : 'فلتر RSI';
   $('status-line').textContent = running
-    ? `السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
+    ? `الاستراتيجية: ${runningStrategy} | السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
     : (st.last_scan_duration != null
       ? (st.last_scan_status === 'partial'
         ? `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، وتعذر ${st.missing || 0} بسبب مهلة مصدر البيانات.`
@@ -538,12 +539,13 @@ async function loadAlerts() {
     const sec = $('sector').value;
     const onlyCurrent = $('only-current').checked;
     const sigFilter = $('signal-filter').value;
-    const params = new URLSearchParams({ limit: '400' });
+    const strategy = $('filter-type').value;
+    const params = new URLSearchParams({ limit: '400', strategy });
     if (onlyCurrent) {
       params.set('market', mkt);
       if (sec !== 'all') params.set('sector', sec);
     }
-    if (sigFilter && sigFilter !== 'both') params.set('direction', sigFilter);
+    if (strategy === 'rsi' && sigFilter && sigFilter !== 'both') params.set('direction', sigFilter);
     const data = await (await fetch(`/api/alerts?${params}`)).json();
     if (alertSort.key) {
       data.sort((a, b) => {
@@ -559,7 +561,8 @@ async function loadAlerts() {
     }
     const body = $('alerts-body');
     if (!data.length) {
-      body.innerHTML = '<tr><td colspan="17" class="empty">لا توجد تنبيهات مطابقة — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>';
+      const strategyName = strategy === 'triple' ? 'الفلتر الثلاثي' : 'فلتر RSI';
+      body.innerHTML = `<tr><td colspan="17" class="empty">لا توجد نتائج محفوظة لـ${strategyName} — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>`;
       return;
     }
     body.innerHTML = data.map(a => {
