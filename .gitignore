@@ -6,6 +6,17 @@ data/config.json
 alerts.db
 data/alerts.db
 data/yf_cache/
+data/yf_cache_triple/
+# ملفات تجارب مؤقتة غير مستخدمة في التطبيق
+hyper_fast_scanner.py
+optimized_app_scanner.py
+optimized_scanner.py
+optimized_scanner_final.py
+performance_benchmark.py
+performance_optimization.py
+performance_test.py
+performance_test2.py
+OPTIMIZED_SCANNER_SUMMARY.md
 .env
 .env.*
 *.pem
