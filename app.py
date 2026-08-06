@@ -88,8 +88,8 @@ TRIPLE_FILTER_MAP = {
 # (طلبا واحدا لكل سهم في معظم الحالات) وهو ما يتناسب مع مهلة الدقيقة على Render.
 TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم الهدف، المصدر، قاعدة إعادة التجميع)
     "1d": [
-        ("1wk", "1h", "1W"),
-        ("1d", "1h", "1D"),
+        ("1wk", "1d", "1W"),
+        ("1d", "1d", None),
         ("1h", "1h", None),
     ],
     "1h": [
@@ -104,6 +104,10 @@ TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم ال�
     ],
 }
 TRIPLE_SOURCE_LOOKBACK = {"1d": "2y", "1h": "730d", "15m": "60d"}
+
+# الفريم الهدف ← فريم بديل إن تعذّر مصدره. مثال: إن غابت بيانات الساعة (1h)
+# لسهمٍ ما على ياهو، يُستخدم فريم الوسط (اليومي) كفريم صغير بديلاً عنه.
+TRIPLE_SMALL_FALLBACK = {"1h": "1d", "15m": "1h"}
 
 RSI_PERIOD = 14
 ATR_PERIOD = 14
@@ -128,8 +132,9 @@ TRIPLE_FETCH_WORKERS = 32   # المصدر (سنتان) يُعاد تجميعه 
 ANALYSIS_WORKERS = 24     # عدد خيوط تحليل الفلتر الثلاثي بالتوازي
 SCAN_INTERVAL_DEFAULT = 30  # دقائق بين دورات الفحص التلقائي
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
-TRIPLE_BUDGET_SECONDS = 240 # الثلاثي أثقل: مصدر كبير (5 سنوات) يُعاد تجميعه — يحتاج
-                            # وقتاً أطول من فحص RSI، ولا يوجد حد منصة على مدة الخيط الخلفي.
+TRIPLE_BUDGET_SECONDS = 300 # الثلاثي أثقل: مصدران (يومي سنتان + ساعة 730 يوماً) يُعاد
+                            # تجميعهما إلى الفريمات الثلاثة، ولا يوجد حد منصة على
+                            # مدة الخيط الخلفي، ويُترك هامش لتحليل وحفظ النتائج.
 # ================================================================
 
 MARKET_AR = {"saudi": "السوق السعودي (تاسي)", "us": "السوق الأمريكي"}
@@ -996,9 +1001,10 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
     """يجلب فريمات الفلتر الثلاثي بطريقة "مصدر واحد لكل سهم".
 
     لكل فريم تنفيذ نحدد فريم المصدر الذي يُنزَّل مرة واحدة لكل سهم (مثال: لتنفيذ
-    يومي ننزّل مصدر الساعة بمدى 730 يوماً ثم نعيد تجميعه إلى أسبوعي ويومي وساعة).
-    هكذا يبقى عدد الطلبات ~طلبا واحدا لكل سهم فيتناسب الفحص مع المهلة على Render.
-    يرجع (data_large, data_medium, data_small, stale_symbols).
+    يومي ننزّل اليومي (سنتان) والساعة (730 يوماً) ثم نعيد التجميع إلى الفريمات
+    الثلاثة، مع بديل للفريم الصغير إن تعذّر مصدره). هكذا يبقى عدد الطلبات محدوداً
+    فيتناسب الفحص مع المهلة على Render.
+    يرجع (data_large, data_medium, data_small, stale_symbols, fallback_small).
     """
     if deadline is None:
         deadline = time.monotonic() + SCAN_BUDGET_SECONDS
@@ -1008,6 +1014,7 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
     sources = list(dict.fromkeys(src for _, src, _ in targets))
     data = {large_tf: {}, medium_tf: {}, small_tf: {}}
     stale_symbols = set()
+    fallback_small = set()
     stale_lock = threading.Lock()
     results_lock = threading.Lock()
     failure_log = []
@@ -1057,16 +1064,27 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                     return
                 df, stale = _load_source(ticker, source)
                 if df is None:
-                    return
+                    continue
                 if stale:
                     with stale_lock:
                         stale_symbols.add(ticker)
                 source_data[source] = df
                 source_stale[source] = stale
+            if not source_data:
+                return
             frames = {}
+            used_fallback = False
             for target, source, rule in targets:
+                src_df = source_data.get(source)
+                if src_df is None:
+                    fb = TRIPLE_SMALL_FALLBACK.get(target)
+                    if fb is None or frames.get(fb) is None:
+                        return
+                    frames[target] = frames[fb]
+                    used_fallback = True
+                    continue
                 try:
-                    frames[target] = _extract_ticker(source_data[source], ticker, rule, tail)
+                    frames[target] = _extract_ticker(src_df, ticker, rule, tail)
                 except Exception as e:
                     _diag_note(ticker, f"resample-error target={target} rule={rule}: "
                                f"{type(e).__name__}: {e}")
@@ -1074,13 +1092,16 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                 if frames[target] is None:
                     _diag_note(ticker, f"resample-empty target={target} rule={rule}")
                     return
-            if any(source_stale.get(src) for _, src, _ in targets):
+            if source_stale:
                 for frame in frames.values():
                     frame.attrs["cache_stale"] = True
             if all(target in frames for target, _, _ in targets):
                 with results_lock:
                     for target, frame in frames.items():
                         data[target][ticker] = frame
+                if used_fallback:
+                    with results_lock:
+                        fallback_small.add(ticker)
         except Exception as e:
             _diag_note(ticker, f"fetch-crash: {type(e).__name__}: {e}")
 
@@ -1144,7 +1165,7 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
                     pass
         finally:
             rp.shutdown(wait=False, cancel_futures=True)
-    return data[large_tf], data[medium_tf], data[small_tf], stale_symbols
+    return data[large_tf], data[medium_tf], data[small_tf], stale_symbols, sorted(fallback_small)
 
 
 def zone_timeframe_for(execution_tf: str) -> str:
@@ -1519,6 +1540,7 @@ def run_scan_triple(override=None, claimed=False):
             "running": True, "phase": "جلب البيانات (3 فريمات)", "total": len(universe),
             "done": 0, "current": "", "bullish": 0, "bearish": 0, "errors": 0,
             "missing": 0, "stale": 0, "timed_out": False,
+            "no_hourly": [], "no_hourly_count": 0,
             "universe_count": len(universe),
             "market": cfg["market"], "sector": cfg["sector"], "strategy": "triple",
         })
@@ -1543,11 +1565,18 @@ def run_scan_triple(override=None, claimed=False):
         triple_sources = list(dict.fromkeys(triple_sources))
         with _state_lock:
             _state["phase"] = f"جلب بيانات {large_tf}←{medium_tf}←{small_tf}"
-        data_large, data_medium, data_small, stale_symbols = fetch_triple_batch(
+        data_large, data_medium, data_small, stale_symbols, fallback_small = fetch_triple_batch(
             tickers, execution_tf, tail=400, deadline=fetch_deadline)
         with _state_lock:
             _state["phase"] = "تحليل الفلتر الثلاثي"
             _state["stale"] = len(stale_symbols)
+        no_small = [(t, ticker_meta.get(t, {}).get("name", "")) for t in fallback_small]
+        with _state_lock:
+            _state["no_hourly_count"] = len(no_small)
+            _state["no_hourly"] = [{"ticker": t, "name": n} for t, n in no_small[:12]]
+        if no_small:
+            print(f"{len(no_small)} سهماً بلا بيانات الفريم الصغير (استُخدم الفريم "
+                  f"الوسط): {', '.join(t for t, _ in no_small[:10])}")
         print(f"جلب البيانات الثلاثي في {time.monotonic() - started:.1f} ث "
               f"| نجح: {len(data_large)} / {len(tickers)}")
 

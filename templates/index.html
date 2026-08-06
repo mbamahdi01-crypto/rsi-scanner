@@ -418,7 +418,7 @@ function toggleFilterUI() {
   };
   $('strategy-description').textContent = isRsi
     ? 'فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.'
-    : `الفلتر الثلاثي النشط: ${combos[tf]}. تتحقق شروط الفواصل الثلاثة معاً دون شرط منطقة طلب أو عرض.`;
+    : `الفلتر الثلاثي النشط: ${combos[tf]}. تتحقق شروط الفواصل الثلاثة معاً دون شرط منطقة طلب أو عرض. إن تعذّر فريمٌ صغيرٌ لسهمٍ ما استُخدم الفريم الوسط بدلاً عنه.`;
   $('rsi-badge').textContent = `الاستراتيجية النشطة: ${isRsi ? 'فلتر RSI' : 'الفلتر الثلاثي'}`;
   $('map-badge').textContent = isRsi
     ? `فريم التنفيذ: ${tfLabel(tf)} ← المنطقة من: ${tfLabel((currentConfig && currentConfig.zone_timeframe) || tf)}`
@@ -430,6 +430,7 @@ function toggleFilterUI() {
       `<b>الفريم الكبير:</b> MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20<br>` +
       `<b>الفريم الوسط:</b> RSI فوق 50 + السعر فوق SMA50<br>` +
       `<b>الفريم الصغير:</b> Stochastic (5,5,30) تقاطع صاعد<br>` +
+      `<b>البديل:</b> إن غابت بيانات الفريم الصغير (مثل الساعة) لسهمٍ ما استُخدم الفريم الوسط بدلاً عنه<br>` +
       `<b>منطقة الطلب/العرض:</b> لا شيء (ليست شرطاً)<br>` +
       `<b>الترتيب:</b> ${combos[tf] || tf}`;
   }
@@ -501,15 +502,19 @@ async function loadStatus(syncControls = false) {
   const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
   $('progress').style.width = pct + '%';
   const runningStrategy = st.strategy === 'triple' ? 'الفلتر الثلاثي' : 'فلتر RSI';
+  const nhCount = st.no_hourly_count || 0;
+  const nhNote = nhCount
+    ? ` — ${nhCount} سهماً بلا بيانات الفريم الصغير استُخدم لها الفريم الوسط (${(st.no_hourly || []).slice(0, 6).map(x => x.ticker).join('، ')}${nhCount > 6 ? '…' : ''}).`
+    : '';
   $('status-line').textContent = running
     ? `الاستراتيجية: ${runningStrategy} | السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
-    : (st.last_scan_duration != null
+    : ((st.last_scan_duration != null
       ? (st.last_scan_status === 'partial'
         ? (st.timed_out
           ? `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، ووصلت مهلة الدورة قبل اكتمال ${st.missing || 0} سهماً — ستُعاد المحاولة تلقائياً.`
           : `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، وتخطّى ${st.missing || 0} سهماً لعدم اكتمال بياناته التاريخية.`)
         : `آخر دورة استغرقت ${st.last_scan_duration} ثانية واكتملت تغطيتها${st.stale ? ` (يجري تحديث ${st.stale} لقطة احتياطية في الخلفية)` : ''}.`)
-      : '');
+      : '') + nhNote);
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
   $('btn-stop').style.display = running ? 'inline-block' : 'none';
