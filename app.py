@@ -312,6 +312,8 @@ def _guard():
 # ==================== قاعدة البيانات ====================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -921,9 +923,11 @@ def run_scan(override=None, claimed=False):
 
         alert_rows = []
         alert_meta = []
+        inserted_total = 0
         alerts_lock = threading.Lock()
 
         def _analyze_one(t, meta, df):
+            nonlocal inserted_total
             if df is None or len(df) < min_bars:
                 return 0, 0, True
             try:
@@ -970,18 +974,31 @@ def run_scan(override=None, claimed=False):
                         result.get("volume_ratio"), result.get("volume"),
                         datetime.now().isoformat(),
                     )
+                    meta_info = {
+                        "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
+                        "ticker": t, "name": meta.get("name", ""), "direction": direction,
+                        "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
+                        "price": result["price"], "rsi_value": result["rsi_value"],
+                        "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
+                        "volume": result.get("volume"),
+                        "zone_low": zone_low, "zone_high": zone_high,
+                        "stop_loss": stop, "target_1": t1, "target_2": t2,
+                    }
                     with alerts_lock:
                         alert_rows.append(row)
-                        alert_meta.append({
-                            "market": cfg["market"], "sector": meta.get("sector", cfg["sector"]),
-                            "ticker": t, "name": meta.get("name", ""), "direction": direction,
-                            "timeframe": cfg["timeframe"], "signal_date": result["signal_date"],
-                            "price": result["price"], "rsi_value": result["rsi_value"],
-                            "rsi_low": result.get("rsi_low"), "volume_ratio": result.get("volume_ratio"),
-                            "volume": result.get("volume"),
-                            "zone_low": zone_low, "zone_high": zone_high,
-                            "stop_loss": stop, "target_1": t1, "target_2": t2,
-                        })
+                        alert_meta.append(meta_info)
+                        inserted = save_alert(
+                            cfg["market"], meta.get("sector", cfg["sector"]), t, meta.get("name", ""),
+                            direction, cfg["timeframe"], result["signal_date"],
+                            result["price"], result["rsi_value"], result["peak_level"],
+                            result.get("rsi_low"), zone_tf, zone_low, zone_high,
+                            stop, t1, t2, result.get("volume_ratio"), result.get("volume"),
+                        )
+                    if inserted:
+                        inserted_total += 1
+                        threading.Thread(target=telegram_send,
+                                         args=(telegram_alert_message(meta_info),),
+                                         daemon=True).start()
                     if direction == "bullish":
                         bulls += 1
                     else:
@@ -1011,13 +1028,7 @@ def run_scan(override=None, claimed=False):
                     _state["errors"] += 1
                 _state["phase"] = f"جلب وتحليل {_state['done']}/{_state['total']}"
         if alert_rows:
-            inserted_flags = save_alerts_batch(alert_rows)
-            new_count = sum(1 for f in inserted_flags if f)
-            for i, meta in enumerate(alert_meta):
-                if inserted_flags[i]:
-                    threading.Thread(target=telegram_send,
-                                     args=(telegram_alert_message(meta),), daemon=True).start()
-            print(f"إدراج {new_count} إشارة جديدة من {len(alert_rows)}")
+            print(f"إدراج {inserted_total} إشارة جديدة من {len(alert_rows)}")
     except Exception:
         import traceback
         traceback.print_exc()
