@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-tabs-20260806-1"
+UI_VERSION = "strategy-tabs-20260806-2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -122,7 +122,7 @@ DEFAULTS = {
     "price_max": None,          # الحد الأقصى لسعر السهم في التنبيه (اختياري)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
-    "signal_filter": "both",    # عرض النتائج: both=الطلب والعرض معاً | bullish=مناطق الطلب فقط | bearish=مناطق العرض فقط
+    "signal_filter": "both",    # both/bullish/bearish لفلتر RSI، وnone للفلتر الثلاثي
 }
 
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -174,7 +174,7 @@ def _load_config():
             cfg["telegram_token"] = saved["telegram_token"]
         if isinstance(saved.get("telegram_chat"), str):
             cfg["telegram_chat"] = saved["telegram_chat"]
-        if saved.get("signal_filter") in ("both", "bullish", "bearish"):
+        if saved.get("signal_filter") in ("both", "bullish", "bearish", "none"):
             cfg["signal_filter"] = saved["signal_filter"]
         if saved.get("timeframe") in EXECUTION_TIMEFRAMES:
             cfg["timeframe"] = saved["timeframe"]
@@ -1657,7 +1657,7 @@ def api_set_config():
             _config["telegram_token"] = data["telegram_token"].strip()
         if "telegram_chat" in data and isinstance(data["telegram_chat"], str):
             _config["telegram_chat"] = data["telegram_chat"].strip()
-        if "signal_filter" in data and data["signal_filter"] in ("both", "bullish", "bearish"):
+        if "signal_filter" in data and data["signal_filter"] in ("both", "bullish", "bearish", "none"):
             _config["signal_filter"] = data["signal_filter"]
         if (_config.get("filter_type") == "triple"
                 and _config["timeframe"] not in TRIPLE_FILTER_MAP):

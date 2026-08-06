@@ -135,12 +135,12 @@
   <div class="panel">
     <div class="strategy-switch" role="tablist" aria-label="اختيار استراتيجية الفحص">
       <button type="button" class="strategy-tab active" id="strategy-rsi" data-strategy="rsi"
-              role="tab" aria-selected="true" aria-controls="rsi-options">
+              role="tab" aria-selected="true" aria-controls="rsi-options" onclick="selectStrategy('rsi')">
         <span class="strategy-icon">R</span>
         <span><strong>فلتر RSI</strong><small>الانفراج واختراق القمة أو كسر القاع مع مناطق الطلب والعرض</small></span>
       </button>
       <button type="button" class="strategy-tab" id="strategy-triple" data-strategy="triple"
-              role="tab" aria-selected="false" aria-controls="triple-info">
+              role="tab" aria-selected="false" aria-controls="triple-info" onclick="selectStrategy('triple')">
         <span class="strategy-icon">3</span>
         <span><strong>الفلتر الثلاثي</strong><small>MACD على الكبير، RSI على الوسط، وStochastic على الصغير</small></span>
       </button>
@@ -177,6 +177,7 @@
       <div class="field">
         <label>المناطق المطلوبة</label>
         <select id="signal-filter">
+          <option value="none">لا شيء — بدون شرط منطقة طلب أو عرض</option>
           <option value="both">كلاهما (الطلب والعرض)</option>
           <option value="bullish">مناطق الطلب فقط (شراء)</option>
           <option value="bearish">مناطق العرض فقط (بيع)</option>
@@ -377,6 +378,7 @@ function toggleFilterUI() {
   const isRsi = ft === 'rsi';
   const rsiOpts = $('rsi-options');
   const tripleInfo = $('triple-info');
+  const signalFilter = $('signal-filter');
   if (rsiOpts) rsiOpts.style.display = isRsi ? 'contents' : 'none';
   if (tripleInfo) tripleInfo.style.display = isRsi ? 'none' : '';
   [...$('timeframe').options].forEach(option => {
@@ -384,6 +386,13 @@ function toggleFilterUI() {
   });
   if (!isRsi && ['1wk', '1mo'].includes($('timeframe').value)) {
     $('timeframe').value = '1d';
+  }
+  if (isRsi) {
+    signalFilter.disabled = false;
+    if (signalFilter.value === 'none') signalFilter.value = 'both';
+  } else {
+    signalFilter.value = 'none';
+    signalFilter.disabled = true;
   }
 
   document.querySelectorAll('.strategy-tab').forEach(tab => {
@@ -400,7 +409,7 @@ function toggleFilterUI() {
   };
   $('strategy-description').textContent = isRsi
     ? 'فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.'
-    : `الفلتر الثلاثي النشط: ${combos[tf]}. يجب أن تتحقق شروط الفواصل الثلاثة معاً.`;
+    : `الفلتر الثلاثي النشط: ${combos[tf]}. تتحقق شروط الفواصل الثلاثة معاً دون شرط منطقة طلب أو عرض.`;
   $('rsi-badge').textContent = `الاستراتيجية النشطة: ${isRsi ? 'فلتر RSI' : 'الفلتر الثلاثي'}`;
   $('map-badge').textContent = isRsi
     ? `فريم التنفيذ: ${tfLabel(tf)} ← المنطقة من: ${tfLabel((currentConfig && currentConfig.zone_timeframe) || tf)}`
@@ -412,15 +421,17 @@ function toggleFilterUI() {
       `<b>الفريم الكبير:</b> MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20<br>` +
       `<b>الفريم الوسط:</b> RSI فوق 50 + السعر فوق SMA50<br>` +
       `<b>الفريم الصغير:</b> Stochastic (5,5,30) تقاطع صاعد<br>` +
+      `<b>منطقة الطلب/العرض:</b> لا شيء (ليست شرطاً)<br>` +
       `<b>الترتيب:</b> ${combos[tf] || tf}`;
   }
 }
 
 function selectStrategy(type) {
-  if (!['rsi', 'triple'].includes(type) || $('filter-type').value === type) return;
+  if (!['rsi', 'triple'].includes(type)) return;
+  const changed = $('filter-type').value !== type;
   $('filter-type').value = type;
   toggleFilterUI();
-  onSelectionChanged();
+  if (changed) onSelectionChanged();
 }
 
 function currentSelection() {
@@ -503,7 +514,7 @@ async function loadStatus(syncControls = false) {
     $('price-min').value = currentConfig.price_min != null ? currentConfig.price_min : '';
     $('price-max').value = currentConfig.price_max != null ? currentConfig.price_max : '';
     if (['rsi', 'triple'].includes(currentConfig.filter_type)) $('filter-type').value = currentConfig.filter_type;
-    if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
+    if (['both', 'bullish', 'bearish', 'none'].includes(currentConfig.signal_filter)) {
       $('signal-filter').value = currentConfig.signal_filter;
     }
     $('tg-token').value = currentConfig.telegram_token || '';
@@ -769,9 +780,6 @@ async function onSelectionChanged() {
 }
 
 $('market').addEventListener('change', () => { renderSectors(); onSelectionChanged(); });
-document.querySelectorAll('.strategy-tab').forEach(tab => {
-  tab.addEventListener('click', () => selectStrategy(tab.dataset.strategy));
-});
 $('sector').addEventListener('change', () => onSelectionChanged());
 $('timeframe').addEventListener('change', () => onSelectionChanged());
 $('signal-filter').addEventListener('change', () => onSelectionChanged());
