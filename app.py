@@ -47,7 +47,7 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-results-20260806-9"
+UI_VERSION = "strategy-results-20260806-10"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
@@ -83,7 +83,7 @@ TRIPLE_FILTER_MAP = {
     "15m": ("1d", "1h"),
 }
 
-# الفلتر الثلاثي يجلب فريم "المصدر" الأفضل مرة واحدة لكل سهم ثم يعيد تجميعه
+# الفلتر الرباعي يجلب فريم "المصدر" الأفضل مرة واحدة لكل سهم ثم يعيد تجميعه
 # (resample) إلى الفريمين المطلوبين — فيبقى عدد الطلبات طلباً واحداً لكل سهم
 # في معظم الحالات وهو ما يتناسب مع المهلة على Render.
 TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم الهدف، المصدر، قاعدة إعادة التجميع)
@@ -126,8 +126,8 @@ ANALYSIS_WORKERS = int(os.environ.get("ANALYSIS_WORKERS", "24"))
 YF_MEM_CACHE_MAX = int(os.environ.get("YF_MEM_CACHE_MAX", "1500"))
 SCAN_INTERVAL_DEFAULT = 30  # قيمة افتراضية محفوظة لأغراض التوافق فقط
 SCAN_BUDGET_SECONDS = 50    # يترك هامشاً للحفظ وإرجاع الحالة قبل الدقيقة
-TRIPLE_BUDGET_SECONDS = 300 # الثلاثي أثقل: مصدران (يومي سنتان + ساعة 730 يوماً) يُعاد
-                            # تجميعهما إلى الفريمات الثلاثة، ولا يوجد حد منصة على
+TRIPLE_BUDGET_SECONDS = 300 # الرباعي أثقل: مصدران (يومي سنتان + ساعة 730 يوماً) يُعاد
+                            # تجميعهما إلى الفريمين، ولا يوجد حد منصة على
                             # مدة الخيط الخلفي، ويُترك هامش لتحليل وحفظ النتائج.
 # ================================================================
 
@@ -147,7 +147,7 @@ DEFAULTS = {
     "price_max": None,          # الحد الأقصى لسعر السهم في التنبيه (اختياري)
     "telegram_token": "",       # توكن بوت تيليجرام (اختياري) — أو عبر متغير البيئة TELEGRAM_BOT_TOKEN
     "telegram_chat": "",        # معرف الشات المستلم للتنبيهات (اختياري) — أو TELEGRAM_CHAT_ID
-    "signal_filter": "both",    # both/bullish/bearish لفلتر RSI، وnone للفلتر الثلاثي
+    "signal_filter": "both",    # both/bullish/bearish لفلتر RSI، وnone للفلتر الرباعي
 }
 
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -1029,7 +1029,7 @@ def _note_blank_result(ticker, interval, lookback, payload):
 
 
 def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=None):
-    """يجلب فريمات الفلتر الثلاثي بطريقة "مصدر واحد لكل سهم".
+    """يجلب فريمات الفلتر الرباعي بطريقة "مصدر واحد لكل سهم".
 
     لكل فريم تنفيذ نحدد فريم المصدر الذي يُنزَّل مرة واحدة لكل سهم (مثال: لتنفيذ
     يومي ننزّل اليومي (سنتان) ثم نعيد تجميعه إلى أسبوعي ويومي). هكذا يبقى عدد
@@ -1164,7 +1164,7 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
 
     failed = [t for t in tickers if t not in data[large_tf]]
     if failed and (deadline is None or time.monotonic() < deadline):
-        print(f"إعادة محاولة {len(failed)} سهماً فاشلاً في الفحص الثلاثي...")
+        print(f"إعادة محاولة {len(failed)} سهماً فاشلاً في الفحص الرباعي...")
         time.sleep(3)
         retry_workers = min(16, max(1, len(failed)))
         rp = ThreadPoolExecutor(max_workers=retry_workers)
@@ -1241,7 +1241,7 @@ def telegram_send(text, token=None, chat_id=None):
 def telegram_alert_message(a):
     market = "تاسي" if a["market"] == "saudi" else "أمريكا"
     is_triple = a.get("direction") == "triple_bullish"
-    tag = "شراء / طلب (ثلاثي)" if is_triple else ("شراء / طلب" if a["direction"] == "bullish" else "بيع / عرض")
+    tag = "شراء / طلب (رباعي)" if is_triple else ("شراء / طلب" if a["direction"] == "bullish" else "بيع / عرض")
     icon = "🔵" if "bullish" in a.get("direction", "") else "🔴"
     ticker = html.escape(str(a.get("ticker") or "—"))
     name = html.escape(str(a.get("name") or "—"))
@@ -1525,7 +1525,7 @@ def run_scan(override=None, claimed=False):
 
 
 def run_scan_triple(override=None, claimed=False):
-    """الفلتر الثلاثي: MACD + RSI + Stochastic على 3 فريمات."""
+    """الفلتر الرباعي: 4 شروط على فريمين (MACD وSMA20 على الكبير، RSI وSMA50 على الوسط)."""
     if not claimed and not _claim_scan():
         return
     started = time.monotonic()
@@ -1540,7 +1540,7 @@ def run_scan_triple(override=None, claimed=False):
         large_tf, medium_tf = TRIPLE_FILTER_MAP.get(
             execution_tf, ("1wk", "1d"))
     except Exception as e:
-        print(f"تعذر تهيئة الفحص الثلاثي: {e}")
+        print(f"تعذر تهيئة الفحص الرباعي: {e}")
         with _state_lock:
             _state.update({"running": False, "phase": "", "last_scan_status": "failed"})
         return
@@ -1554,7 +1554,7 @@ def run_scan_triple(override=None, claimed=False):
             "market": cfg["market"], "sector": cfg["sector"], "strategy": "triple",
         })
 
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص ثلاثي {len(universe)} "
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] بدء فحص رباعي {len(universe)} "
           f"| {MARKET_AR.get(cfg['market'], cfg['market'])} / {cfg['sector']} "
           f"| الفريمات: {large_tf} ← {medium_tf}")
 
@@ -1577,9 +1577,9 @@ def run_scan_triple(override=None, claimed=False):
         data_large, data_medium, stale_symbols = fetch_triple_batch(
             tickers, execution_tf, tail=400, deadline=fetch_deadline)
         with _state_lock:
-            _state["phase"] = "تحليل الفلتر الثلاثي"
+            _state["phase"] = "تحليل الفلتر الرباعي"
             _state["stale"] = len(stale_symbols)
-        print(f"جلب البيانات الثلاثي في {time.monotonic() - started:.1f} ث "
+        print(f"جلب البيانات الرباعي في {time.monotonic() - started:.1f} ث "
               f"| نجح: {len(data_large)} / {len(tickers)}")
 
         price_min = cfg.get("price_min")
@@ -1606,7 +1606,7 @@ def run_scan_triple(override=None, claimed=False):
                     return [], (0, 0, False)
                 return [(t, meta, result)], (1, 0, False)
             except Exception as e:
-                print(f"  خطأ أثناء فحص ثلاثي {t}: {e}")
+                print(f"  خطأ أثناء فحص رباعي {t}: {e}")
                 return [], (0, 0, True)
 
         # تحليل متوازٍ ضمن المهلة نفسها
@@ -1703,7 +1703,7 @@ def run_scan_triple(override=None, claimed=False):
                 _schedule_cache_refresh(tickers, src,
                                         lookback=TRIPLE_SOURCE_LOOKBACK.get(src),
                                         base_dir=YF_TRIPLE_CACHE_DIR)
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص الثلاثي في {time.monotonic() - started:.1f} ث "
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص الرباعي في {time.monotonic() - started:.1f} ث "
           f"| إشارات: {_state['bullish']}")
 
 

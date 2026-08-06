@@ -61,7 +61,7 @@ def calculate_stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
 def detect_triple_filter(df_large: pd.DataFrame, df_medium: pd.DataFrame,
                          df_small: pd.DataFrame = None):
     """
-    الفلتر الثلاثي (فريمين فعالين):
+    الفلتر الرباعي (فريمين):
     - الكبير: MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20
     - الوسط: RSI فوق 50 + السعر فوق SMA50
     (الفريم الصغير/الستوكاستك أُزيل بناءً على طلب المستخدم.)

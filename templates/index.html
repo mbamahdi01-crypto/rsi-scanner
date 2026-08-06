@@ -146,17 +146,17 @@
          class="strategy-tab{% if filter_type == 'triple' %} active{% endif %}" id="strategy-triple"
          data-strategy="triple" role="tab" aria-selected="{{ 'true' if filter_type == 'triple' else 'false' }}"
          aria-controls="triple-info">
-        <span class="strategy-icon">3</span>
-        <span><strong>الفلتر الثلاثي</strong><small>MACD على الكبير، RSI على الوسط، وStochastic على الصغير</small></span>
+        <span class="strategy-icon">4</span>
+        <span><strong>الفلتر الرباعي</strong><small>4 شروط: MACD وSMA20 على الكبير، RSI وSMA50 على الوسط</small></span>
       </a>
     </div>
     <select id="filter-type" aria-hidden="true" tabindex="-1">
       <option value="rsi"{% if filter_type == 'rsi' %} selected{% endif %}>فلتر RSI</option>
-      <option value="triple"{% if filter_type == 'triple' %} selected{% endif %}>الفلتر الثلاثي</option>
+      <option value="triple"{% if filter_type == 'triple' %} selected{% endif %}>الفلتر الرباعي</option>
     </select>
     <div class="strategy-description" id="strategy-description">
       {% if filter_type == 'triple' %}
-      الفلتر الثلاثي: شروط الفواصل الثلاثة معاً دون شرط منطقة طلب أو عرض.
+      الفلتر الرباعي: أربعة شروط معاً (MACD وSMA20 على الفريم الكبير، RSI وSMA50 على الفريم الوسط) دون شرط منطقة طلب أو عرض.
       {% else %}
       فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.
       {% endif %}
@@ -220,7 +220,7 @@
       </div>
       <div id="triple-info" style="display:{{ 'block' if filter_type == 'triple' else 'none' }};">
         <div class="field" style="flex-basis:100%">
-          <label style="color:#4fd1c5;font-weight:bold;">الشروط الثلاثية (تلقائي حسب الفريم):</label>
+          <label style="color:#4fd1c5;font-weight:bold;">الشروط الرباعية (تلقائي حسب الفريم):</label>
           <div style="font-size:12px;color:#8a8f98;line-height:1.8;" id="triple-desc"></div>
         </div>
       </div>
@@ -413,8 +413,8 @@ function toggleFilterUI() {
   };
   $('strategy-description').textContent = isRsi
     ? 'فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.'
-    : `الفلتر الثلاثي النشط: ${combos[tf]}. تتحقق شروط الفاصلين معاً: MACD على الفريم الكبير + RSI على الفريم الوسط.`;
-  $('rsi-badge').textContent = `الاستراتيجية النشطة: ${isRsi ? 'فلتر RSI' : 'الفلتر الثلاثي'}`;
+    : `الفلتر الرباعي النشط: ${combos[tf]}. تتحقق الشروط الأربعة معاً: MACD وSMA20 على الفريم الكبير + RSI وSMA50 على الفريم الوسط.`;
+  $('rsi-badge').textContent = `الاستراتيجية النشطة: ${isRsi ? 'فلتر RSI' : 'الفلتر الرباعي'}`;
   $('map-badge').textContent = isRsi
     ? `فريم التنفيذ: ${tfLabel(tf)} ← المنطقة من: ${tfLabel((currentConfig && currentConfig.zone_timeframe) || tf)}`
     : `ترتيب الفواصل: ${combos[tf]}`;
@@ -493,7 +493,7 @@ async function loadStatus(syncControls = false) {
   $('st-last').innerText = st.last_scan_at ? st.last_scan_at.replace('T', ' ').slice(0, 19) : '—';
   const pct = st.total ? Math.round(100 * (st.done || 0) / st.total) : 0;
   $('progress').style.width = pct + '%';
-  const runningStrategy = st.strategy === 'triple' ? 'الفلتر الثلاثي' : 'فلتر RSI';
+  const runningStrategy = st.strategy === 'triple' ? 'الفلتر الرباعي' : 'فلتر RSI';
   $('status-line').textContent = running
     ? `الاستراتيجية: ${runningStrategy} | السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
     : (st.last_scan_duration != null
@@ -555,7 +555,7 @@ async function loadAlerts() {
     }
     const body = $('alerts-body');
     if (!data.length) {
-      const strategyName = strategy === 'triple' ? 'الفلتر الثلاثي' : 'فلتر RSI';
+      const strategyName = strategy === 'triple' ? 'الفلتر الرباعي' : 'فلتر RSI';
       body.innerHTML = `<tr><td colspan="17" class="empty">لا توجد نتائج محفوظة لـ${strategyName} — اضغط "فحص الآن" أو انتظر الدورة التالية</td></tr>`;
       return;
     }
@@ -563,7 +563,7 @@ async function loadAlerts() {
     const isTriple = a.direction === 'triple_bullish';
     const isBullish = a.direction === 'bullish' || isTriple;
     const tagClass = isBullish ? 'bullish' : 'bearish';
-    const tagLabel = isTriple ? 'طلب / فلتر ثلاثي' : (isBullish ? 'طلب / شراء' : 'عرض / بيع');
+    const tagLabel = isTriple ? 'طلب / فلتر رباعي' : (isBullish ? 'طلب / شراء' : 'عرض / بيع');
     const zone = (a.zone_low != null && a.zone_high != null)
       ? `${Number(a.zone_low).toFixed(2)} — ${Number(a.zone_high).toFixed(2)} <span class="muted">(${esc(a.zone_timeframe || '—')})</span>`
       : '—';
