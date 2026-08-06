@@ -84,16 +84,74 @@
     display: inline-block; background: #1a1d24; border: 1px solid #2a2d34;
     border-radius: 20px; padding: 4px 14px; font-size: 12px; color: #4fd1c5; margin-top: 8px;
   }
+  .strategy-switch {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+    margin-bottom: 12px; padding: 6px; border: 1px solid #2a2d34;
+    border-radius: 14px; background: #101319;
+  }
+  .strategy-tab {
+    position: relative; display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 14px 16px; border: 1px solid transparent; border-radius: 10px;
+    background: transparent; color: #a8adb7; text-align: right; cursor: pointer;
+    font-family: inherit; transition: background .2s, border-color .2s, color .2s;
+  }
+  .strategy-tab:hover { background: #1a1d24; color: #fff; }
+  .strategy-tab.active {
+    color: #fff; border-color: #4fd1c5;
+    background: linear-gradient(135deg, rgba(79,209,197,.18), rgba(79,209,197,.05));
+    box-shadow: inset 0 0 0 1px rgba(79,209,197,.08);
+  }
+  .strategy-tab .strategy-icon {
+    display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px;
+    border-radius: 9px; background: #20242d; color: #f6c453; font-size: 18px;
+  }
+  .strategy-tab.active .strategy-icon { background: #4fd1c5; color: #0f1115; }
+  .strategy-tab strong { display: block; font-size: 15px; margin-bottom: 3px; }
+  .strategy-tab small { display: block; color: #8a8f98; font-size: 11px; line-height: 1.4; }
+  .strategy-tab.active small { color: #b9deda; }
+  .strategy-description {
+    margin-bottom: 16px; padding: 10px 13px; border-right: 3px solid #4fd1c5;
+    border-radius: 7px; background: rgba(79,209,197,.06); color: #b5bac4;
+    font-size: 12px; line-height: 1.7;
+  }
+  #filter-type { display: none; }
+  #rsi-options { display: contents; }
+  #triple-info { flex-basis: 100%; }
+  @media (max-width: 680px) {
+    body { padding: 12px; }
+    .strategy-switch { grid-template-columns: 1fr; }
+    .strategy-tab { padding: 12px; }
+    .field, .field select, .field input { width: 100%; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🔔 فلتر انفراج RSI + مناطق الطلب والعرض</h1>
-  <p class="sub">يفحص الأسهم في السوق السعودي (تاسي) والسوق الأمريكي وقطاعاتهما، ويطلق التنبيه في اللحظة التي يخترق فيها RSI القمة (طلب/شراء) أو يكسر القاع (عرض/بيع)، مع عرض منطقة الطلب/العرض من الفريم الأعلى.</p>
+  <h1>ماسح استراتيجيات السوق السعودي والأمريكي</h1>
+  <p class="sub">اختر الاستراتيجية المناسبة، ثم حدّد السوق والقطاع والفاصل واضغط «فحص الآن».</p>
   <span class="badge" id="map-badge">فريم التنفيذ: يومي ← المنطقة من: أسبوعي</span>
-  <span class="badge" id="rsi-badge">حالة RSI: أقل من 50</span>
+  <span class="badge" id="rsi-badge">الاستراتيجية النشطة: فلتر RSI</span>
 
   <div class="panel">
+    <div class="strategy-switch" role="tablist" aria-label="اختيار استراتيجية الفحص">
+      <button type="button" class="strategy-tab active" id="strategy-rsi" data-strategy="rsi"
+              role="tab" aria-selected="true" aria-controls="rsi-options">
+        <span class="strategy-icon">R</span>
+        <span><strong>فلتر RSI</strong><small>الانفراج واختراق القمة أو كسر القاع مع مناطق الطلب والعرض</small></span>
+      </button>
+      <button type="button" class="strategy-tab" id="strategy-triple" data-strategy="triple"
+              role="tab" aria-selected="false" aria-controls="triple-info">
+        <span class="strategy-icon">3</span>
+        <span><strong>الفلتر الثلاثي</strong><small>MACD على الكبير، RSI على الوسط، وStochastic على الصغير</small></span>
+      </button>
+    </div>
+    <select id="filter-type" aria-hidden="true" tabindex="-1">
+      <option value="rsi">فلتر RSI</option>
+      <option value="triple">الفلتر الثلاثي</option>
+    </select>
+    <div class="strategy-description" id="strategy-description">
+      فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.
+    </div>
     <div class="grid">
       <div class="field">
         <label>السوق</label>
@@ -124,6 +182,7 @@
           <option value="bearish">مناطق العرض فقط (بيع)</option>
         </select>
       </div>
+      <div id="rsi-options">
       <div class="field">
         <label>شرط RSI لتنبيه الشراء (السهم هبط)</label>
         <select id="rsi-max">
@@ -133,10 +192,6 @@
           <option value="30">تشبع بيعي (أقل من 30)</option>
           <option value="20">تشبع بيعي قوي (أقل من 20)</option>
         </select>
-      </div>
-      <div class="field">
-        <label>دورة الفحص التلقائي (دقائق)</label>
-        <input type="number" id="interval" min="5" value="30" style="min-width:120px">
       </div>
       <div class="field">
         <label>فلتر الحجم (×1.5 المتوسط)</label>
@@ -152,6 +207,13 @@
           <option value="true">مفعّل</option>
         </select>
       </div>
+      </div>
+      <div id="triple-info" style="display:none;">
+        <div class="field" style="flex-basis:100%">
+          <label style="color:#4fd1c5;font-weight:bold;">الشروط الثلاثية (تلقائي حسب الفريم):</label>
+          <div style="font-size:12px;color:#8a8f98;line-height:1.8;" id="triple-desc"></div>
+        </div>
+      </div>
       <div class="field">
         <label>السعر من</label>
         <input type="number" id="price-min" step="any" placeholder="مثال: 5" style="min-width:120px">
@@ -159,6 +221,10 @@
       <div class="field">
         <label>السعر إلى</label>
         <input type="number" id="price-max" step="any" placeholder="مثال: 100" style="min-width:120px">
+      </div>
+      <div class="field">
+        <label>دورة الفحص التلقائي (دقائق)</label>
+        <input type="number" id="interval" min="5" value="30" style="min-width:120px">
       </div>
       <div class="field" style="flex-basis:100%">
         <label>تنبيهات تيليجرام — توكن البوت (أنشئه من @BotFather)</label>
@@ -300,16 +366,67 @@ function renderSectors(preferred) {
 function syncUI() {
   if (!currentConfig) return;
   if (['saudi', 'us'].includes(currentConfig.market)) $('market').value = currentConfig.market;
+  if (['rsi', 'triple'].includes(currentConfig.filter_type)) $('filter-type').value = currentConfig.filter_type;
   renderSectors(currentConfig.sector);
   if (['15m', '1h', '1d', '1wk', '1mo'].includes(currentConfig.timeframe)) $('timeframe').value = currentConfig.timeframe;
-  $('map-badge').textContent =
-    `فريم التنفيذ: ${tfLabel(currentConfig.timeframe)} ← المنطقة من: ${tfLabel(currentConfig.zone_timeframe)}`;
-  $('rsi-badge').textContent = rsiLabel(currentConfig.rsi_max);
+  toggleFilterUI();
+}
+
+function toggleFilterUI() {
+  const ft = $('filter-type').value;
+  const isRsi = ft === 'rsi';
+  const rsiOpts = $('rsi-options');
+  const tripleInfo = $('triple-info');
+  if (rsiOpts) rsiOpts.style.display = isRsi ? 'contents' : 'none';
+  if (tripleInfo) tripleInfo.style.display = isRsi ? 'none' : '';
+  [...$('timeframe').options].forEach(option => {
+    option.disabled = !isRsi && ['1wk', '1mo'].includes(option.value);
+  });
+  if (!isRsi && ['1wk', '1mo'].includes($('timeframe').value)) {
+    $('timeframe').value = '1d';
+  }
+
+  document.querySelectorAll('.strategy-tab').forEach(tab => {
+    const active = tab.dataset.strategy === ft;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+
+  const tf = $('timeframe').value;
+  const combos = {
+    '1d': 'شهري ← أسبوعي ← يومي',
+    '1h': 'أسبوعي ← يومي ← ساعة',
+    '15m': 'يومي ← ساعة ← 15 دقيقة',
+  };
+  $('strategy-description').textContent = isRsi
+    ? 'فلتر RSI الكلاسيكي: يبحث عن الانفراج ثم يؤكد الإشارة باختراق أو كسر مستوى RSI.'
+    : `الفلتر الثلاثي النشط: ${combos[tf]}. يجب أن تتحقق شروط الفواصل الثلاثة معاً.`;
+  $('rsi-badge').textContent = `الاستراتيجية النشطة: ${isRsi ? 'فلتر RSI' : 'الفلتر الثلاثي'}`;
+  $('map-badge').textContent = isRsi
+    ? `فريم التنفيذ: ${tfLabel(tf)} ← المنطقة من: ${tfLabel((currentConfig && currentConfig.zone_timeframe) || tf)}`
+    : `ترتيب الفواصل: ${combos[tf]}`;
+
+  if (!isRsi) {
+    const desc = $('triple-desc');
+    if (desc) desc.innerHTML =
+      `<b>الفريم الكبير:</b> MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20<br>` +
+      `<b>الفريم الوسط:</b> RSI فوق 50 + السعر فوق SMA50<br>` +
+      `<b>الفريم الصغير:</b> Stochastic (5,5,30) تقاطع صاعد<br>` +
+      `<b>الترتيب:</b> ${combos[tf] || tf}`;
+  }
+}
+
+function selectStrategy(type) {
+  if (!['rsi', 'triple'].includes(type) || $('filter-type').value === type) return;
+  $('filter-type').value = type;
+  toggleFilterUI();
+  onSelectionChanged();
 }
 
 function currentSelection() {
   return {
     market: $('market').value,
+    filter_type: $('filter-type').value,
     sector: $('sector').value,
     timeframe: $('timeframe').value,
     rsi_max: $('rsi-max').value === '' ? null : parseInt($('rsi-max').value, 10),
@@ -334,9 +451,7 @@ async function saveConfig() {
   });
   if (!res.ok) throw new Error('فشل حفظ الإعدادات');
   currentConfig = await res.json();
-  $('map-badge').innerHTML =
-    `فريم التنفيذ: ${tfLabel(currentConfig.timeframe)} ← المنطقة من: ${tfLabel(currentConfig.zone_timeframe)}`;
-  $('rsi-badge').innerHTML = rsiLabel(currentConfig.rsi_max);
+  toggleFilterUI();
 }
 
 function rsiLabel(v) {
@@ -367,7 +482,11 @@ async function loadStatus(syncControls = false) {
   $('progress').style.width = pct + '%';
   $('status-line').textContent = running
     ? `السوق: ${st.market === 'us' ? 'أمريكي' : 'سعودي'} | القطاع: ${secLabel(st.sector)} — ${st.phase || ''} ${st.current || ''} (${st.done || 0}/${st.total || 0})`
-    : (st.last_scan_duration != null ? `آخر دورة استغرقت ${st.last_scan_duration} ثانية.` : '');
+    : (st.last_scan_duration != null
+      ? (st.last_scan_status === 'partial'
+        ? `انتهت الدورة خلال ${st.last_scan_duration} ثانية: فُحص ${st.done || 0}/${st.total || 0}، وتعذر ${st.missing || 0} بسبب مهلة مصدر البيانات.`
+        : `آخر دورة استغرقت ${st.last_scan_duration} ثانية واكتملت تغطيتها${st.stale ? ` (يجري تحديث ${st.stale} لقطة احتياطية في الخلفية)` : ''}.`)
+      : '');
   $('toggle-auto').innerText = currentConfig.auto ? 'إيقاف الفحص التلقائي' : 'تشغيل الفحص التلقائي';
   $('toggle-auto').className = 'btn ' + (currentConfig.auto ? 'stop' : 'ghost');
   $('btn-stop').style.display = running ? 'inline-block' : 'none';
@@ -383,12 +502,14 @@ async function loadStatus(syncControls = false) {
     $('trend-filter').value = currentConfig.trend_filter ? 'true' : 'false';
     $('price-min').value = currentConfig.price_min != null ? currentConfig.price_min : '';
     $('price-max').value = currentConfig.price_max != null ? currentConfig.price_max : '';
+    if (['rsi', 'triple'].includes(currentConfig.filter_type)) $('filter-type').value = currentConfig.filter_type;
     if (['both', 'bullish', 'bearish'].includes(currentConfig.signal_filter)) {
       $('signal-filter').value = currentConfig.signal_filter;
     }
     $('tg-token').value = currentConfig.telegram_token || '';
     $('tg-chat').value = currentConfig.telegram_chat || '';
   }
+  toggleFilterUI();
 }
 
 async function loadAlerts() {
@@ -647,6 +768,9 @@ async function onSelectionChanged() {
 }
 
 $('market').addEventListener('change', () => { renderSectors(); onSelectionChanged(); });
+document.querySelectorAll('.strategy-tab').forEach(tab => {
+  tab.addEventListener('click', () => selectStrategy(tab.dataset.strategy));
+});
 $('sector').addEventListener('change', () => onSelectionChanged());
 $('timeframe').addEventListener('change', () => onSelectionChanged());
 $('signal-filter').addEventListener('change', () => onSelectionChanged());
@@ -670,7 +794,7 @@ $('only-current').addEventListener('change', loadAlerts);
   loadAlerts();
 })();
 
-setInterval(loadStatus, 4000);
+setInterval(loadStatus, 3000);
 setInterval(loadAlerts, 3000);
 </script>
 </body>

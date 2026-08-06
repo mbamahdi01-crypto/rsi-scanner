@@ -7,6 +7,49 @@ import scanner
 
 
 class ScannerTests(unittest.TestCase):
+    @staticmethod
+    def _triple_frames():
+        close = [10.0] * 59 + [20.0]
+        frame = pd.DataFrame({
+            "Date": pd.date_range("2026-01-01", periods=60, freq="D"),
+            "Open": close, "High": [v + 1 for v in close],
+            "Low": [v - 1 for v in close], "Close": close,
+        })
+        return frame.copy(), frame.copy(), frame.copy()
+
+    def test_triple_filter_requires_real_macd_cross(self):
+        large, medium, small = self._triple_frames()
+        macd = pd.Series([-2.0] * 59 + [-1.5])
+        signal = pd.Series([-1.0] * 60)
+        histogram = macd - signal
+        rsi = pd.Series([60.0] * 60)
+        stoch_k = pd.Series([20.0] * 59 + [40.0])
+        stoch_d = pd.Series([30.0] * 60)
+
+        with patch.object(scanner, "calculate_macd", return_value=(macd, signal, histogram)), \
+             patch.object(scanner, "calculate_rsi", return_value=rsi), \
+             patch.object(scanner, "calculate_stochastic", return_value=(stoch_k, stoch_d)):
+            result = scanner.detect_triple_filter(large, medium, small)
+
+        self.assertIsNone(result)
+
+    def test_triple_filter_accepts_all_three_rules(self):
+        large, medium, small = self._triple_frames()
+        macd = pd.Series([-2.0] * 59 + [-1.0])
+        signal = pd.Series([-1.5] * 59 + [-1.2])
+        histogram = macd - signal
+        rsi = pd.Series([60.0] * 60)
+        stoch_k = pd.Series([20.0] * 59 + [40.0])
+        stoch_d = pd.Series([30.0] * 60)
+
+        with patch.object(scanner, "calculate_macd", return_value=(macd, signal, histogram)), \
+             patch.object(scanner, "calculate_rsi", return_value=rsi), \
+             patch.object(scanner, "calculate_stochastic", return_value=(stoch_k, stoch_d)):
+            result = scanner.detect_triple_filter(large, medium, small)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["direction"], "triple_bullish")
+
     def test_volume_filter_fails_when_volume_is_missing(self):
         df = pd.DataFrame({"Close": [10.0] * 25})
         ratio, passed = scanner._volume_at_break(df, 24)

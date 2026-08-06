@@ -36,6 +36,102 @@ def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int
     return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
 
+def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
+    """حساب MACD: يرجع (macd_line, signal_line, histogram)."""
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def calculate_stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
+                         k_period: int = 5, k_smooth: int = 5, d_period: int = 30):
+    """حساب Stochastic: يرجع (%K مُنعّق, %D)."""
+    lowest_low = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+    raw_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+    raw_k = raw_k.replace([np.inf, -np.inf], np.nan)
+    k_smoothed = raw_k.rolling(window=k_smooth).mean()
+    d_line = k_smoothed.rolling(window=d_period).mean()
+    return k_smoothed, d_line
+
+
+def detect_triple_filter(df_large: pd.DataFrame, df_medium: pd.DataFrame,
+                         df_small: pd.DataFrame):
+    """
+    الفلتر الثلاثي: يفحص 3 فريمات:
+    - الكبير: MACD تقاطع صاعد تحت خط الصفر + السعر فوق SMA20
+    - الوسط: RSI فوق 50 + السعر فوق SMA50
+    - الصغير: Stochastic (5,5,30) تقاطع صاعد
+    """
+    if df_large is None or len(df_large) < 60:
+        return None
+    close_l = df_large["Close"]
+    macd_line, signal_line, _ = calculate_macd(close_l)
+    sma20 = close_l.rolling(20).mean()
+    last_idx = len(df_large) - 1
+    if last_idx < 1:
+        return None
+    macd_now = macd_line.iloc[last_idx]
+    macd_prev = macd_line.iloc[last_idx - 1]
+    signal_now = signal_line.iloc[last_idx]
+    signal_prev = signal_line.iloc[last_idx - 1]
+    if any(pd.isna(v) for v in (macd_now, macd_prev, signal_now, signal_prev)):
+        return None
+    # تقاطع حقيقي في الشمعة الحالية، ويقع خط MACD تحت خط الصفر.
+    if not (macd_now < 0 and macd_prev <= signal_prev and macd_now > signal_now):
+        return None
+    if pd.isna(sma20.iloc[last_idx]) or float(close_l.iloc[last_idx]) <= float(sma20.iloc[last_idx]):
+        return None
+    large_date = df_large["Date"].iloc[last_idx] if "Date" in df_large.columns else str(last_idx)
+
+    if df_medium is None or len(df_medium) < 60:
+        return None
+    close_m = df_medium["Close"]
+    rsi_m = calculate_rsi(close_m, 14)
+    sma50 = close_m.rolling(50).mean()
+    last_m = len(df_medium) - 1
+    rsi_val = float(rsi_m.iloc[last_m])
+    if rsi_val <= 50:
+        return None
+    if pd.isna(sma50.iloc[last_m]) or float(close_m.iloc[last_m]) <= float(sma50.iloc[last_m]):
+        return None
+    medium_date = df_medium["Date"].iloc[last_m] if "Date" in df_medium.columns else str(last_m)
+
+    if df_small is None or len(df_small) < 40:
+        return None
+    high_s = df_small["High"]
+    low_s = df_small["Low"]
+    close_s = df_small["Close"]
+    k, d = calculate_stochastic(high_s, low_s, close_s, k_period=5, k_smooth=5, d_period=30)
+    last_s = len(df_small) - 1
+    if last_s < 1:
+        return None
+    k_now, d_now = k.iloc[last_s], d.iloc[last_s]
+    k_prev, d_prev = k.iloc[last_s - 1], d.iloc[last_s - 1]
+    if pd.isna(k_now) or pd.isna(d_now) or pd.isna(k_prev) or pd.isna(d_prev):
+        return None
+    if not ((k_prev <= d_prev) and (k_now > d_now)):
+        return None
+    small_date = df_small["Date"].iloc[last_s] if "Date" in df_small.columns else str(last_s)
+
+    return {
+        "direction": "triple_bullish", "fresh_breakout": True,
+        "signal_date": small_date,
+        "price": float(close_s.iloc[last_s]),
+        "large_timeframe": {"macd": round(float(macd_now), 4),
+                            "macd_signal": round(float(signal_line.iloc[last_idx]), 4),
+                            "sma20": round(float(sma20.iloc[last_idx]), 2), "date": str(large_date)},
+        "medium_timeframe": {"rsi": round(rsi_val, 2),
+                             "sma50": round(float(sma50.iloc[last_m]), 2), "date": str(medium_date)},
+        "small_timeframe": {"stoch_k": round(float(k_now), 2),
+                            "stoch_d": round(float(d_now), 2), "date": str(small_date)},
+        "rsi_value": rsi_val, "rsi_low": None, "peak_level": None, "atr": None, "volume_ratio": None,
+    }
+
+
 def _volume_at_break(df: pd.DataFrame, pos: int, threshold: float = 1.5):
     """
     يفحص حجم شمعة الاختراق مقابل متوسط آخر 20 شمعة (قبل الاختراق).
@@ -200,7 +296,8 @@ def _find_last_divergence(df: pd.DataFrame, direction: str, rsi_period: int = 14
 def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
                    pivot_right: int = 3, tolerance: int = 3, rsi_max: float = None,
                    fresh_window: int = None, min_volume_ratio: float = None,
-                   trend_filter: bool = False, trend_period: int = 200, rsi: pd.Series = None):
+                   trend_filter: bool = False, trend_period: int = 200,
+                   rsi: pd.Series = None, _precomputed_atr: pd.Series = None):
     """
     انفراج إيجابي + اختراق الرقبة (أعلى قيمتي RSI عند القاعين) = تنبيه شراء.
     - يُلتقط التنبيه في شمعة الاختراق نفسها (وليس بعد شموع لاحقة).
@@ -209,6 +306,7 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
     - min_volume_ratio: يُشترط أن يكون حجم شمعة الاختراق >= النسبة × متوسط آخر 20 شمعة.
     - trend_filter: يُشترط أن يكون السعر فوق المتوسط المتحرك (اتجاه صاعد).
     - rsi: سلسلة RSI محسوبة مسبقاً (اختياري) لتجنب إعادة الحساب.
+    - _precomputed_atr: ATR محسوب مسبقاً (اختياري) لتجنب إعادة الحساب.
     يرجع dict أو None.
     """
     info = _find_last_divergence(df, "bullish", rsi_period, pivot_left, pivot_right,
@@ -243,7 +341,11 @@ def detect_signal(df: pd.DataFrame, rsi_period: int = 14, pivot_left: int = 3,
         return None
 
     atr_val = None
-    if {"High", "Low"}.issubset(df.columns):
+    if _precomputed_atr is not None:
+        v = _precomputed_atr.iloc[first_break_pos]
+        if not pd.isna(v):
+            atr_val = float(v)
+    elif {"High", "Low"}.issubset(df.columns):
         a = calculate_atr(df["High"], df["Low"], df["Close"], 14)
         v = a.iloc[first_break_pos]
         if not pd.isna(v):
@@ -269,7 +371,7 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
                            pivot_right: int = 3, tolerance: int = 3, rsi_min: float = None,
                            fresh_window: int = None, min_volume_ratio: float = None,
                            trend_filter: bool = False, trend_period: int = 200,
-                           rsi: pd.Series = None):
+                           rsi: pd.Series = None, _precomputed_atr: pd.Series = None):
     """
     انفراج سلبي + كسر الرقبة (أدنى قيمتي RSI عند القمتين) = تنبيه بيع.
     يُلتقط التنبيه في شمعة الكسر نفسها.
@@ -277,6 +379,7 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
     - min_volume_ratio: يُشترط أن يكون حجم شمعة الكسر >= النسبة × متوسط آخر 20 شمعة.
     - trend_filter: يُشترط أن يكون السعر تحت المتوسط المتحرك (اتجاه هابط).
     - rsi: سلسلة RSI محسوبة مسبقاً (اختياري) لتجنب إعادة الحساب.
+    - _precomputed_atr: ATR محسوب مسبقاً (اختياري) لتجنب إعادة الحساب.
     يرجع dict أو None.
     """
     info = _find_last_divergence(df, "bearish", rsi_period, pivot_left, pivot_right,
@@ -311,7 +414,11 @@ def detect_signal_bearish(df: pd.DataFrame, rsi_period: int = 14, pivot_left: in
         return None
 
     atr_val = None
-    if {"High", "Low"}.issubset(df.columns):
+    if _precomputed_atr is not None:
+        v = _precomputed_atr.iloc[first_break_pos]
+        if not pd.isna(v):
+            atr_val = float(v)
+    elif {"High", "Low"}.issubset(df.columns):
         a = calculate_atr(df["High"], df["Low"], df["Close"], 14)
         v = a.iloc[first_break_pos]
         if not pd.isna(v):
