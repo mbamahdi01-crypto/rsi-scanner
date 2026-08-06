@@ -47,13 +47,14 @@ from scanner import (backtest_signals, calculate_rsi, calculate_atr,
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-UI_VERSION = "strategy-results-20260806-5"
+UI_VERSION = "strategy-results-20260806-6"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
 BUNDLED_DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "alerts.db")
 YF_CACHE_DIR = os.path.join(DATA_DIR, "yf_cache")
+YF_TRIPLE_CACHE_DIR = os.path.join(DATA_DIR, "yf_cache_triple")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 if os.path.abspath(DATA_DIR) != os.path.abspath(BUNDLED_DATA_DIR):
@@ -81,6 +82,28 @@ TRIPLE_FILTER_MAP = {
     "1h": ("1wk", "1d", "1h"),
     "15m": ("1d", "1h", "15m"),
 }
+
+# الفلتر الثلاثي يجلب فريم "المصدر" الأفضل مرة واحدة لكل سهم ثم يعيد تجميعه
+# (resample) إلى الفريمات الثلاثة — فيبقى عدد الطلبات مساوياً لفحص RSI العادي
+# (طلبا واحداً لكل سهم في معظم الحالات) وهو ما يتناسب مع مهلة الدقيقة على Render.
+TRIPLE_SOURCE_MAP = {          # فريم التنفيذ ← (الفريم الهدف، المصدر، قاعدة إعادة التجميع)
+    "1d": [
+        ("1mo", "1d", "1ME"),
+        ("1wk", "1d", "1W"),
+        ("1d", "1d", None),
+    ],
+    "1h": [
+        ("1wk", "1h", "1W"),
+        ("1d", "1h", "1D"),
+        ("1h", "1h", None),
+    ],
+    "15m": [
+        ("1d", "1d", None),
+        ("1h", "15m", "1h"),
+        ("15m", "15m", None),
+    ],
+}
+TRIPLE_SOURCE_LOOKBACK = {"1d": "5y", "1h": "730d", "15m": "60d"}
 
 RSI_PERIOD = 14
 ATR_PERIOD = 14
@@ -561,9 +584,9 @@ def _cache_stale_ttl(interval):
     return 45 * 86400
 
 
-def _cache_path(ticker, interval):
+def _cache_path(ticker, interval, base_dir=None):
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(ticker))
-    d = os.path.join(YF_CACHE_DIR, str(interval))
+    d = os.path.join(base_dir or YF_CACHE_DIR, str(interval))
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, safe + ".csv")
 
@@ -579,13 +602,13 @@ def _write_cache_worker():
             _cache_write_queue.task_done()
             break
         try:
-            ticker, interval, df = item
+            ticker, interval, df, base_dir = item
             if df is None or df.empty:
                 continue
             out = df.copy()
             if isinstance(out.index, pd.DatetimeIndex) and out.index.tz is not None:
                 out.index = out.index.tz_convert("UTC").tz_localize(None)
-            path = _cache_path(ticker, interval)
+            path = _cache_path(ticker, interval, base_dir)
             tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
             out.reset_index().to_csv(tmp, index=False)
             os.replace(tmp, path)
@@ -601,9 +624,9 @@ def _start_cache_writer():
                          daemon=True).start()
 
 
-def _read_cache(ticker, interval, max_age=None):
+def _read_cache(ticker, interval, max_age=None, base_dir=None):
     try:
-        p = _cache_path(ticker, interval)
+        p = _cache_path(ticker, interval, base_dir)
         max_age = _cache_ttl(interval) if max_age is None else max_age
         if not os.path.exists(p) or time.time() - os.path.getmtime(p) > max_age:
             return None
@@ -619,9 +642,9 @@ def _read_cache(ticker, interval, max_age=None):
         return None
 
 
-def _write_cache(ticker, interval, df):
+def _write_cache(ticker, interval, df, base_dir=None):
     try:
-        _cache_write_queue.put_nowait((ticker, interval, df))
+        _cache_write_queue.put_nowait((ticker, interval, df, base_dir))
     except queue.Full:
         pass
 
@@ -683,19 +706,20 @@ _refresh_lock = threading.Lock()
 _refreshing = set()
 
 
-def _schedule_cache_refresh(tickers, timeframe):
+def _schedule_cache_refresh(tickers, timeframe, lookback=None, base_dir=None):
     """يحدّث الكاش خارج المسار الحرج، مع منع تنزيل الرمز نفسه مرتين."""
     tickers = list(dict.fromkeys(tickers))
     if not tickers:
         return
     base_interval = CUSTOM_TIMEFRAMES.get(timeframe, (timeframe, None))[0]
-    lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
+    if lookback is None:
+        lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
 
     def _run():
         keys = []
         with _refresh_lock:
             for ticker in tickers:
-                key = (ticker, base_interval)
+                key = (ticker, base_interval, base_dir)
                 if key not in _refreshing:
                     _refreshing.add(key)
                     keys.append(key)
@@ -704,13 +728,13 @@ def _schedule_cache_refresh(tickers, timeframe):
         deadline = time.monotonic() + 900
 
         def _refresh(key):
-            ticker, interval = key
-            if _read_cache(ticker, interval) is not None:
+            ticker, interval, bdir = key
+            if _read_cache(ticker, interval, base_dir=bdir) is not None:
                 return
             try:
                 raw = _download_one(ticker, lookback, interval, deadline)
                 if raw is not None and not raw.empty:
-                    _write_cache(ticker, interval, raw)
+                    _write_cache(ticker, interval, raw, base_dir=bdir)
             except Exception:
                 pass
 
@@ -927,67 +951,85 @@ def fetch_batch(tickers, timeframe, tail=None, pool=None, deadline=None):
     return results
 
 
-def fetch_triple_batch(tickers, timeframes, tail=None, workers=None, deadline=None):
-    """يجلب الفريمات الثلاثة لكل سهم في مهمة واحدة داخل نفس الخيط.
+def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=None):
+    """يجلب فريمات الفلتر الثلاثي بطريقة "مصدر واحد لكل سهم".
 
-    بدلاً من تشغيل 3 موجات منفصلة (واحدة لكل فريم) كلٌّ بحصته الضيقة من الخيوط
-    والمهلة، نمر على كل رمز مرة واحدة ونجلب فريماته الثلاثة تباعاً — فيبقى عدد
-    الاتصالات محدوداً بعدد الخيوط، ويتوزع الحِمل بتوازن، ولا يستهلك فريمٌ بطيء
-    حصة الفريمات الأخرى. يرجع (data_large, data_medium, data_small, stale_symbols).
+    لكل فريم تنفيذ نحدد فريم المصدر الذي يُنزَّل مرة واحدة لكل سهم (مثال: لتنفيذ
+    يومي ننزّل اليومي بمدى 5 سنوات ثم نعيد تجميعه إلى أسبوعي وشهري). هكذا يبقى
+    عدد الطلبات ~طلبا واحدا لكل سهم فيتناسب الفحص مع مهلة الدقيقة على Render.
+    يرجع (data_large, data_medium, data_small, stale_symbols).
     """
     if deadline is None:
         deadline = time.monotonic() + SCAN_BUDGET_SECONDS
-    large_tf, medium_tf, small_tf = timeframes
+    targets = TRIPLE_SOURCE_MAP.get(execution_tf, TRIPLE_SOURCE_MAP["1d"])
+    large_tf, medium_tf, small_tf = TRIPLE_FILTER_MAP.get(
+        execution_tf, ("1mo", "1wk", "1d"))
+    sources = list(dict.fromkeys(src for _, src, _ in targets))
     data = {large_tf: {}, medium_tf: {}, small_tf: {}}
     stale_symbols = set()
     stale_lock = threading.Lock()
     results_lock = threading.Lock()
 
+    def _load_source(ticker, source):
+        lookback = TRIPLE_SOURCE_LOOKBACK.get(source, DEFAULT_LOOKBACK)
+        cached = _read_cache(ticker, source, base_dir=YF_TRIPLE_CACHE_DIR)
+        stale = False
+        if cached is None:
+            cached = _read_cache(ticker, source, base_dir=YF_TRIPLE_CACHE_DIR,
+                                 max_age=_cache_stale_ttl(source))
+            stale = cached is not None
+        df = cached
+        if df is not None:
+            try:
+                df = df.dropna(subset=["Open", "High", "Low", "Close"])
+            except Exception:
+                df = None
+            if df is not None and df.empty:
+                df = None
+        if df is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                return None, False
+            try:
+                raw = _download_one(ticker, lookback, source, deadline)
+            except Exception:
+                return None, False
+            if raw is None or raw.empty:
+                return None, False
+            _write_cache(ticker, source, raw, base_dir=YF_TRIPLE_CACHE_DIR)
+            df = raw.dropna(subset=["Open", "High", "Low", "Close"])
+            if df.empty:
+                return None, False
+        return df, stale
+
     def _fetch_one(ticker):
-        frames = {}
-        for interval in (large_tf, medium_tf, small_tf):
+        source_data = {}
+        source_stale = {}
+        for source in sources:
             if deadline is not None and time.monotonic() >= deadline:
                 return
-            base_interval, rule = CUSTOM_TIMEFRAMES.get(interval, (interval, None))
-            lookback = LOOKBACK_MAP.get(base_interval, DEFAULT_LOOKBACK)
-            cached = _read_cache(ticker, base_interval)
-            stale = False
-            if cached is None:
-                cached = _read_cache(ticker, base_interval,
-                                     max_age=_cache_stale_ttl(base_interval))
-                stale = cached is not None
-            df = None
-            if cached is not None:
-                try:
-                    df = _extract_ticker(cached, ticker, rule, tail)
-                except Exception:
-                    df = None
+            df, stale = _load_source(ticker, source)
             if df is None:
-                if deadline is not None and time.monotonic() >= deadline:
-                    return
-                try:
-                    raw = _download_one(ticker, lookback, base_interval, deadline)
-                except Exception:
-                    return
-                if raw is None or raw.empty:
-                    continue
-                _write_cache(ticker, base_interval, raw)
-                try:
-                    df = _extract_ticker(raw, ticker, rule, tail)
-                except Exception as e:
-                    print(f"فشل تجهيز بيانات {ticker}: {e}")
-                    df = None
-                if df is None:
-                    continue
+                return
             if stale:
-                df.attrs["cache_stale"] = True
                 with stale_lock:
                     stale_symbols.add(ticker)
-            frames[interval] = df
+            source_data[source] = df
+            source_stale[source] = stale
+        frames = {}
+        for target, source, rule in targets:
+            try:
+                frames[target] = _extract_ticker(source_data[source], ticker, rule, tail)
+            except Exception:
+                return
+            if frames[target] is None:
+                return
+        if any(source_stale.get(src) for _, src, _ in targets):
+            for frame in frames.values():
+                frame.attrs["cache_stale"] = True
         if len(frames) == 3:
             with results_lock:
-                for interval, frame in frames.items():
-                    data[interval][ticker] = frame
+                for target, frame in frames.items():
+                    data[target][ticker] = frame
 
     tickers = list(tickers)
     workers = min(workers or TRIPLE_FETCH_WORKERS, max(1, len(tickers)))
@@ -1421,13 +1463,16 @@ def run_scan_triple(override=None, claimed=False):
         ticker_meta = {ticker: meta for ticker, meta in items}
         tickers = [t for t, _ in items]
 
-        # جلب البيانات للفريمات الثلاثة معاً: كل سهم يُجلب فريماته الثلاثة
-        # في مهمة واحدة، وبميزانية تقارب كامل مدة الفحص (التحليل سريع جداً).
+        # جلب البيانات: فريم مصدر واحد لكل سهم يُنزَّل ثم يُعاد تجميعه إلى
+        # الفريمات الثلاثة، بميزانية تقارب كامل مدة الفحص (التحليل سريع جداً).
         fetch_deadline = min(_deadline - 4, time.monotonic() + SCAN_BUDGET_SECONDS * 0.92)
+        triple_sources = [src for _, src, _ in TRIPLE_SOURCE_MAP.get(
+            execution_tf, TRIPLE_SOURCE_MAP["1d"])]
+        triple_sources = list(dict.fromkeys(triple_sources))
         with _state_lock:
             _state["phase"] = f"جلب بيانات {large_tf}←{medium_tf}←{small_tf}"
         data_large, data_medium, data_small, stale_symbols = fetch_triple_batch(
-            tickers, (large_tf, medium_tf, small_tf), tail=400, deadline=fetch_deadline)
+            tickers, execution_tf, tail=400, deadline=fetch_deadline)
         with _state_lock:
             _state["phase"] = "تحليل الفلتر الثلاثي"
             _state["stale"] = len(stale_symbols)
@@ -1549,8 +1594,10 @@ def run_scan_triple(override=None, claimed=False):
                 "missing": missing, "timed_out": timed_out,
             })
         if missing and "tickers" in locals():
-            for timeframe in (large_tf, medium_tf, small_tf):
-                _schedule_cache_refresh(tickers, timeframe)
+            for src in triple_sources:
+                _schedule_cache_refresh(tickers, src,
+                                        lookback=TRIPLE_SOURCE_LOOKBACK.get(src),
+                                        base_dir=YF_TRIPLE_CACHE_DIR)
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] انتهى الفحص الثلاثي في {time.monotonic() - started:.1f} ث "
           f"| إشارات: {_state['bullish']}")
 
