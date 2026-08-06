@@ -1126,6 +1126,24 @@ def fetch_triple_batch(tickers, execution_tf, tail=None, workers=None, deadline=
         for fut in futs:
             fut.cancel()
         ex.shutdown(wait=False, cancel_futures=True)
+
+    failed = [t for t in tickers if t not in data[large_tf]]
+    if failed and (deadline is None or time.monotonic() < deadline):
+        print(f"إعادة محاولة {len(failed)} سهماً فاشلاً في الفحص الثلاثي...")
+        time.sleep(3)
+        retry_workers = min(16, max(1, len(failed)))
+        rp = ThreadPoolExecutor(max_workers=retry_workers)
+        try:
+            rfuts = {rp.submit(_fetch_one, t): t for t in failed}
+            timeout = None if deadline is None else max(0, deadline - time.monotonic())
+            done, _ = wait(rfuts, timeout=timeout)
+            for fut in done:
+                try:
+                    fut.result()
+                except Exception:
+                    pass
+        finally:
+            rp.shutdown(wait=False, cancel_futures=True)
     return data[large_tf], data[medium_tf], data[small_tf], stale_symbols
 
 
